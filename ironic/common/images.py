@@ -20,8 +20,10 @@ Handling of VM disk images.
 """
 
 import os
+from pathlib import Path
 import shutil
 import time
+from typing import Any, BinaryIO, Optional, Union
 
 from oslo_concurrency import processutils
 from oslo_log import log as logging
@@ -41,7 +43,9 @@ from ironic.conf import CONF
 LOG = logging.getLogger(__name__)
 
 
-def _create_root_fs(root_directory, files_info):
+def _create_root_fs(
+        root_directory: Union[Path, str],
+        files_info: dict[Union[Path, str, bytes], str]) -> None:
     """Creates a filesystem root in given directory.
 
     Given a mapping of absolute path of files to their relative paths
@@ -60,23 +64,27 @@ def _create_root_fs(root_directory, files_info):
     :raises: OSError, if creation of any directory failed.
     :raises: IOError, if copying any of the files failed.
     """
+    root_dir = Path(root_directory)
     for src_file, path in files_info.items():
         LOG.debug('Injecting %(path)s into an ISO from %(source)r',
                   {'path': path, 'source': src_file})
-        target_file = os.path.join(root_directory, path)
-        dirname = os.path.dirname(target_file)
+        target_file = root_dir / path
+        dirname = target_file.parent
         if dirname:
-            os.makedirs(dirname, exist_ok=True)
+            dirname.mkdir(parents=True, exist_ok=True)
 
         if isinstance(src_file, bytes):
-            with open(target_file, 'wb') as fp:
-                fp.write(src_file)
+            target_file.write_bytes(src_file)
         else:
             shutil.copyfile(src_file, target_file)
 
 
-def create_vfat_image(output_file, files_info=None, parameters=None,
-                      parameters_file='parameters.txt', fs_size_kib=100):
+def create_vfat_image(
+        output_file: Union[Path, str],
+        files_info: Optional[dict[Union[Path, str, bytes], str]] = None,
+        parameters: Optional[dict[str, Any]] = None,
+        parameters_file: str = 'parameters.txt',
+        fs_size_kib: int = 100) -> None:
     """Creates the fat fs image on the desired file.
 
     This method copies the given files to a root directory (optional),
@@ -100,9 +108,10 @@ def create_vfat_image(output_file, files_info=None, parameters=None,
              of filesystem manipulation activities like creating dirs,
              mounting, creating filesystem, copying files, etc.
     """
+    output_path = Path(output_file)
     try:
         # TODO(sbaker): use utils.dd when rootwrap has been removed
-        utils.execute('dd', 'if=/dev/zero', 'of=%s' % output_file, 'count=1',
+        utils.execute('dd', 'if=/dev/zero', 'of=%s' % output_path, 'count=1',
                       'bs=%dKiB' % fs_size_kib)
     except processutils.ProcessExecutionError as e:
         raise exception.ImageCreationFailed(image_type='vfat', error=e)
@@ -115,7 +124,7 @@ def create_vfat_image(output_file, files_info=None, parameters=None,
             # NOTE: FAT filesystem label can be up to 11 characters long.
             # TODO(sbaker): use utils.mkfs when rootwrap has been removed
             utils.execute('mkfs', '-t', 'vfat', '-n',
-                          'ir-vfd-dev', output_file)
+                          'ir-vfd-dev', str(output_path))
         except processutils.ProcessExecutionError as e:
             raise exception.ImageCreationFailed(image_type='vfat', error=e)
 
@@ -124,29 +133,33 @@ def create_vfat_image(output_file, files_info=None, parameters=None,
                 _create_root_fs(tmpdir, files_info)
 
             if parameters:
-                parameters_file = os.path.join(tmpdir, parameters_file)
+                params_file_path = Path(tmpdir) / parameters_file
                 params_list = ['%(key)s=%(val)s' % {'key': k, 'val': v}
                                for k, v in parameters.items()]
                 file_contents = '\n'.join(params_list)
-                utils.write_to_file(parameters_file, file_contents)
+                utils.write_to_file(str(params_file_path), file_contents)
 
-            file_list = os.listdir(tmpdir)
+            tmpdir_path = Path(tmpdir)
+            file_list = list(tmpdir_path.iterdir())
 
             if not file_list:
                 return
 
-            file_list = [os.path.join(tmpdir, item) for item in file_list]
+            file_list_str = [str(f) for f in file_list]
 
             # use mtools to copy the files into the image in a single
             # operation
-            utils.execute('mcopy', '-s', *file_list, '-i', output_file, '::')
+            utils.execute('mcopy', '-s', *file_list_str, '-i', str(output_path), '::')
 
         except Exception as e:
             LOG.exception("vfat image creation failed. Error: %s", e)
             raise exception.ImageCreationFailed(image_type='vfat', error=e)
 
 
-def _generate_cfg(kernel_params, template, options):
+def _generate_cfg(
+        kernel_params: Optional[list[str]],
+        template: Union[Path, str],
+        options: dict[str, Any]) -> str:
     """Generates a isolinux or grub configuration file.
 
     Given a given a list of strings containing kernel parameters, this method
@@ -164,7 +177,7 @@ def _generate_cfg(kernel_params, template, options):
     return utils.render_template(template, options)
 
 
-def _label(files_info):
+def _label(files_info: dict[Union[Path, str, bytes], str]) -> str:
     """Get a suitable label for the files.
 
     Returns "config-2" if the openstack metadata is present.
@@ -176,8 +189,12 @@ def _label(files_info):
 
 
 def create_isolinux_image_for_bios(
-        output_file, kernel, ramdisk, kernel_params=None, inject_files=None,
-        publisher_id=None):
+        output_file: Union[Path, str],
+        kernel: Union[Path, str],
+        ramdisk: Union[Path, str],
+        kernel_params: Optional[list[str]] = None,
+        inject_files: Optional[dict[Union[Path, str], str]] = None,
+        publisher_id: Optional[str] = None) -> None:
     """Creates an isolinux image on the specified file.
 
     Copies the provided kernel, ramdisk to a directory, generates the isolinux
@@ -207,7 +224,8 @@ def create_isolinux_image_for_bios(
     options = {'kernel': '/vmlinuz', 'ramdisk': '/initrd'}
 
     with utils.tempdir() as tmpdir:
-        files_info = {
+        tmpdir_path = Path(tmpdir)
+        files_info: dict[Union[Path, str, bytes], str] = {
             kernel: 'vmlinuz',
             ramdisk: 'initrd',
             CONF.isolinux_bin: ISOLINUX_BIN,
@@ -217,14 +235,14 @@ def create_isolinux_image_for_bios(
 
         # ldlinux.c32 is required for syslinux 5.0 or later.
         if CONF.ldlinux_c32:
-            ldlinux_src = CONF.ldlinux_c32
+            ldlinux_src: Optional[Union[Path, str]] = CONF.ldlinux_c32
         else:
+            ldlinux_src = None
             for directory in LDLINUX_SRC_DIRS:
-                ldlinux_src = os.path.join(directory, 'ldlinux.c32')
-                if os.path.isfile(ldlinux_src):
+                ldlinux_path = Path(directory) / 'ldlinux.c32'
+                if ldlinux_path.is_file():
+                    ldlinux_src = ldlinux_path
                     break
-            else:
-                ldlinux_src = None
         if ldlinux_src:
             files_info[ldlinux_src] = LDLINUX_BIN
 
@@ -238,8 +256,8 @@ def create_isolinux_image_for_bios(
         cfg = _generate_cfg(kernel_params,
                             CONF.isolinux_config_template, options)
 
-        isolinux_cfg = os.path.join(tmpdir, ISOLINUX_CFG)
-        utils.write_to_file(isolinux_cfg, cfg)
+        isolinux_cfg = tmpdir_path / ISOLINUX_CFG
+        utils.write_to_file(str(isolinux_cfg), cfg)
 
         # Set a publisher ID value to a string.
         pub_id = str(publisher_id)
@@ -248,15 +266,21 @@ def create_isolinux_image_for_bios(
             utils.execute('mkisofs', '-r', '-V', _label(files_info),
                           '-J', '-l', '-publisher', pub_id, '-no-emul-boot',
                           '-boot-load-size', '4', '-boot-info-table',
-                          '-b', ISOLINUX_BIN, '-o', output_file, tmpdir)
+                          '-b', ISOLINUX_BIN, '-o', str(output_file), tmpdir)
         except processutils.ProcessExecutionError as e:
             LOG.exception("Creating ISO image failed.")
             raise exception.ImageCreationFailed(image_type='iso', error=e)
 
 
 def create_esp_image_for_uefi(
-        output_file, kernel, ramdisk, deploy_iso=None, esp_image=None,
-        kernel_params=None, inject_files=None, publisher_id=None):
+        output_file: Union[Path, str],
+        kernel: Union[Path, str],
+        ramdisk: Union[Path, str],
+        deploy_iso: Optional[Union[Path, str]] = None,
+        esp_image: Optional[Union[Path, str]] = None,
+        kernel_params: Optional[list[str]] = None,
+        inject_files: Optional[dict[Union[Path, str], str]] = None,
+        publisher_id: Optional[str] = None) -> None:
     """Creates an ESP image on the specified file.
 
     Copies the provided kernel, ramdisk and EFI system partition image (ESP) to
@@ -288,7 +312,8 @@ def create_esp_image_for_uefi(
     grub_options = {'linux': '/vmlinuz', 'initrd': '/initrd'}
 
     with utils.tempdir() as tmpdir:
-        files_info = {
+        tmpdir_path = Path(tmpdir)
+        files_info: dict[Union[Path, str, bytes], str] = {
             kernel: 'vmlinuz',
             ramdisk: 'initrd',
         }
@@ -303,13 +328,13 @@ def create_esp_image_for_uefi(
                 uefi_path_info, e_img_rel_path, grub_rel_path = (
                     _get_deploy_iso_files(deploy_iso, mountdir))
 
-                grub_cfg = os.path.join(tmpdir, grub_rel_path)
+                grub_cfg = tmpdir_path / grub_rel_path
 
             # Use ELF boot loader provided
             elif esp_image and not deploy_iso:
                 e_img_rel_path = EFIBOOT_LOCATION
                 grub_rel_path = CONF.grub_config_path.lstrip(' ' + os.sep)
-                grub_cfg = os.path.join(tmpdir, grub_rel_path)
+                grub_cfg = tmpdir_path / grub_rel_path
 
                 # Create an empty grub config file by copying /dev/null.
                 # This is to avoid write failures when actual write of
@@ -343,18 +368,18 @@ def create_esp_image_for_uefi(
         # Generate and copy grub config file.
         grub_conf = _generate_cfg(kernel_params,
                                   CONF.grub_config_template, grub_options)
-        utils.write_to_file(grub_cfg, grub_conf)
+        utils.write_to_file(str(grub_cfg), grub_conf)
 
         # Create the boot_iso.
         if publisher_id:
             args = ('mkisofs', '-r', '-V', _label(files_info),
                     '-l', '-publisher', publisher_id, '-e', e_img_rel_path,
-                    '-no-emul-boot', '-o', output_file,
+                    '-no-emul-boot', '-o', str(output_file),
                     tmpdir)
         else:
             args = ('mkisofs', '-r', '-V', _label(files_info),
                     '-l', '-e', e_img_rel_path,
-                    '-no-emul-boot', '-o', output_file,
+                    '-no-emul-boot', '-o', str(output_file),
                     tmpdir)
         try:
             utils.execute(*args)
@@ -364,8 +389,11 @@ def create_esp_image_for_uefi(
             raise exception.ImageCreationFailed(image_type='iso', error=e)
 
 
-def fetch_into(context, image_href, image_file,
-               image_auth_data=None):
+def fetch_into(
+        context: Any,
+        image_href: str,
+        image_file: Union[Path, str, BinaryIO],
+        image_auth_data: Optional[dict[str, Any]] = None) -> Optional[str]:
     """Fetches image file contents into a file.
 
     :param context: A context object.
@@ -397,7 +425,7 @@ def fetch_into(context, image_href, image_file,
         # can differ dramatically by types.
         image_service.set_image_auth(image_href, image_auth_data)
 
-    if isinstance(image_file, str):
+    if isinstance(image_file, (str, Path)):
         with open(image_file, "wb") as image_file_obj:
             image_service.download(image_href, image_file_obj)
     else:
@@ -417,9 +445,10 @@ def fetch_into(context, image_href, image_file,
     return None
 
 
-def _handle_zstd_compression(path):
+def _handle_zstd_compression(path: Union[Path, str]) -> None:
+    path_obj = Path(path)
     zstd_comp = False
-    with open(path, 'rb') as comp_check:
+    with path_obj.open('rb') as comp_check:
         # Check for zstd compression. Zstd has a variable window for streaming
         # clients with transparent connections, and 128 byte blocks.
         # Ultimately, requests can't support handling of such content without
@@ -434,46 +463,53 @@ def _handle_zstd_compression(path):
             zstd_comp = True
 
     if zstd_comp and not CONF.conductor.disable_zstandard_decompression:
-        temp_path = path + '.zstd'
-        shutil.move(path, temp_path)
+        temp_path = path_obj.with_suffix(path_obj.suffix + '.zstd')
+        shutil.move(str(path_obj), str(temp_path))
         try:
-            utils.execute('zstd', '-d', '--rm', temp_path)
+            utils.execute('zstd', '-d', '--rm', str(temp_path))
         except OSError as e:
             LOG.error('Failed to decompress a zstd compressed file: %s', e)
             # Restore the downloaded file... We might want to fail the
             # entire process.
-            shutil.move(temp_path, path)
+            shutil.move(str(temp_path), str(path_obj))
 
 
-def fetch(context, image_href, path, force_raw=False,
-          checksum=None, checksum_algo=None,
-          image_auth_data=None):
-    with fileutils.remove_path_on_error(path):
-        transfer_checksum = fetch_into(context, image_href, path,
+def fetch(
+        context: Any,
+        image_href: str,
+        path: Union[Path, str],
+        force_raw: bool = False,
+        checksum: Optional[str] = None,
+        checksum_algo: Optional[str] = None,
+        image_auth_data: Optional[dict[str, Any]] = None) -> None:
+    path_obj = Path(path)
+    with fileutils.remove_path_on_error(str(path_obj)):
+        transfer_checksum = fetch_into(context, image_href, path_obj,
                                        image_auth_data)
         if (not transfer_checksum
                 and not CONF.conductor.disable_file_checksum
                 and checksum):
-            checksum_utils.validate_checksum(path, checksum, checksum_algo)
+            checksum_utils.validate_checksum(str(path_obj), checksum, checksum_algo)
 
     # Check and decompress zstd files, since python-requests realistically
     # can't do it for us as-is. Also, some OCI container registry artifacts
     # may generally just be zstd compressed, regardless if it is a raw file
     # or a qcow2 file.
-    _handle_zstd_compression(path)
+    _handle_zstd_compression(path_obj)
 
     if force_raw:
-        image_to_raw(image_href, path, "%s.part" % path)
+        image_to_raw(image_href, path_obj, path_obj.with_suffix(path_obj.suffix + '.part'))
 
 
-def detect_file_format(path):
+def detect_file_format(
+        path: Union[Path, str]) -> image_format_inspector.ImageFormatInfo:
     """Re-implementation of detect_file_format from oslo.utils
 
     This implementation specifically allows for single multi-format
     combination of ISO+GPT, which it treats like ISO.
     """
-
-    with open(path, 'rb') as f:
+    path_obj = Path(path)
+    with path_obj.open('rb') as f:
         wrapper = image_format_inspector.InspectWrapper(f)
         try:
             while f.peek():
@@ -489,13 +525,13 @@ def detect_file_format(path):
         if format_names == {'iso', 'gpt'}:
             # If iso+gpt, we choose the iso because bootable-as-block ISOs
             # can legitimately have a GPT bootloader in front.
-            LOG.debug('Detected %s as ISO+GPT, allowing as ISO', path)
+            LOG.debug('Detected %s as ISO+GPT, allowing as ISO', path_obj)
             return [x for x in wrapper.formats if str(x) == 'iso'][0]
         # Any other case of multiple formats is an error
         raise
 
 
-def get_source_format(image_href, path):
+def get_source_format(image_href: str, path: Union[Path, str]) -> str:
     try:
         img_format = detect_file_format(path)
     except image_format_inspector.ImageFormatError as exc:
@@ -512,16 +548,21 @@ def get_source_format(image_href, path):
     return str(img_format)
 
 
-def force_raw_will_convert(image_href, path_tmp):
-    with fileutils.remove_path_on_error(path_tmp):
+def force_raw_will_convert(image_href: str, path_tmp: Union[Path, str]) -> bool:
+    with fileutils.remove_path_on_error(str(path_tmp)):
         fmt = get_source_format(image_href, path_tmp)
     return fmt not in RAW_IMAGE_FORMATS
 
 
-def image_to_raw(image_href, path, path_tmp):
-    with fileutils.remove_path_on_error(path_tmp):
+def image_to_raw(
+        image_href: str,
+        path: Union[Path, str],
+        path_tmp: Union[Path, str]) -> None:
+    path_obj = Path(path)
+    path_tmp_obj = Path(path_tmp)
+    with fileutils.remove_path_on_error(str(path_tmp_obj)):
         if not CONF.conductor.disable_deep_image_inspection:
-            fmt = safety_check_image(path_tmp)
+            fmt = safety_check_image(path_tmp_obj)
 
             if not image_format_permitted(fmt):
                 LOG.error("Security: The requested image %(image_href)s "
@@ -531,12 +572,12 @@ def image_to_raw(image_href, path, path_tmp):
                            'format': fmt})
                 raise exception.InvalidImage()
         else:
-            fmt = get_source_format(image_href, path)
+            fmt = get_source_format(image_href, path_obj)
             LOG.warning("Security: Image safety checking has been disabled. "
                         "This is unsafe operation. Attempting to continue "
                         "the detected format %(img_fmt)s for %(path)s.",
                         {'img_fmt': fmt,
-                         'path': path})
+                         'path': path_obj})
 
         if fmt not in RAW_IMAGE_FORMATS and fmt != "iso":
             # When the target format is NOT raw, we need to convert it.
@@ -545,15 +586,15 @@ def image_to_raw(image_href, path, path_tmp):
             # we have correctly fingerprinted it. Prior to proper
             # image detection, we thought we had a raw image, and we
             # would end up asking for a raw image to be made a raw image.
-            staged = "%s.converted" % path
+            staged = path_obj.with_suffix(path_obj.suffix + '.converted')
 
             utils.is_memory_insufficient(raise_if_fail=True)
             LOG.debug("%(image)s was %(format)s, converting to raw",
                       {'image': image_href, 'format': fmt})
-            with fileutils.remove_path_on_error(staged):
-                qemu_img.convert_image(path_tmp, staged, 'raw',
+            with fileutils.remove_path_on_error(str(staged)):
+                qemu_img.convert_image(str(path_tmp_obj), str(staged), 'raw',
                                        source_format=fmt)
-                os.unlink(path_tmp)
+                path_tmp_obj.unlink()
                 new_fmt = get_source_format(image_href, staged)
                 if new_fmt not in RAW_IMAGE_FORMATS:
                     raise exception.ImageConvertFailed(
@@ -561,12 +602,16 @@ def image_to_raw(image_href, path, path_tmp):
                         reason=_("Converted to raw, but format is "
                                  "now %s") % new_fmt)
 
-                os.rename(staged, path)
+                staged.rename(path_obj)
         else:
-            os.rename(path_tmp, path)
+            path_tmp_obj.rename(path_obj)
 
 
-def image_show(context, image_href, image_service=None, image_auth_data=None):
+def image_show(
+        context: Any,
+        image_href: str,
+        image_service: Optional[Any] = None,
+        image_auth_data: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     if image_service is None:
         image_service = service.get_image_service(image_href, context=context)
     if image_service.is_auth_set_needed:
@@ -575,14 +620,17 @@ def image_show(context, image_href, image_service=None, image_auth_data=None):
     return image_service.show(image_href)
 
 
-def download_size(context, image_href, image_service=None,
-                  image_auth_data=None):
+def download_size(
+        context: Any,
+        image_href: str,
+        image_service: Optional[Any] = None,
+        image_auth_data: Optional[dict[str, Any]] = None) -> int:
     return image_show(context, image_href,
                       image_service=image_service,
                       image_auth_data=image_auth_data)['size']
 
 
-def converted_size(path, estimate=False):
+def converted_size(path: Union[Path, str], estimate: bool = False) -> int:
     """Get size of converted raw image.
 
     The size of image converted to raw format can be growing up to the virtual
@@ -603,7 +651,10 @@ def converted_size(path, estimate=False):
     return int(min(data.actual_size * growth_factor, data.virtual_size))
 
 
-def get_image_properties(context, image_href, properties="all"):
+def get_image_properties(
+        context: Any,
+        image_href: str,
+        properties: Union[str, list[str]] = "all") -> dict[str, Any]:
     """Returns the values of several properties of an image
 
     :param context: context
@@ -623,7 +674,7 @@ def get_image_properties(context, image_href, properties="all"):
     return {p: iproperties.get(p) for p in properties}
 
 
-def get_temp_url_for_glance_image(context, image_uuid):
+def get_temp_url_for_glance_image(context: Any, image_uuid: str) -> str:
     """Returns the tmp url for a glance image.
 
     :param context: context
@@ -637,10 +688,18 @@ def get_temp_url_for_glance_image(context, image_uuid):
     return glance_service.swift_temp_url(image_properties)
 
 
-def create_boot_iso(context, output_filename, kernel_href,
-                    ramdisk_href, deploy_iso_href=None, esp_image_href=None,
-                    root_uuid=None, kernel_params=None, boot_mode=None,
-                    inject_files=None, publisher_id=None):
+def create_boot_iso(
+        context: Any,
+        output_filename: Union[Path, str],
+        kernel_href: str,
+        ramdisk_href: str,
+        deploy_iso_href: Optional[str] = None,
+        esp_image_href: Optional[str] = None,
+        root_uuid: Optional[str] = None,
+        kernel_params: Optional[str] = None,
+        boot_mode: Optional[str] = None,
+        inject_files: Optional[dict[Union[Path, str], str]] = None,
+        publisher_id: Optional[str] = None) -> None:
     """Creates a bootable ISO image for a node.
 
     Given the hrefs for kernel, ramdisk, root partition's UUID and
@@ -671,8 +730,9 @@ def create_boot_iso(context, output_filename, kernel_href,
     :raises: ImageCreationFailed, if creating boot ISO failed.
     """
     with utils.tempdir() as tmpdir:
-        kernel_path = os.path.join(tmpdir, 'kernel')
-        ramdisk_path = os.path.join(tmpdir, 'ramdisk')
+        tmpdir_path = Path(tmpdir)
+        kernel_path = tmpdir_path / 'kernel'
+        ramdisk_path = tmpdir_path / 'ramdisk'
         fetch(context, kernel_href, kernel_path)
         fetch(context, ramdisk_href, ramdisk_path)
 
@@ -684,14 +744,15 @@ def create_boot_iso(context, output_filename, kernel_href,
 
         if boot_mode == 'uefi':
 
-            deploy_iso_path = esp_image_path = None
+            deploy_iso_path: Optional[Path] = None
+            esp_image_path: Optional[Union[Path, str]] = None
 
             if deploy_iso_href:
-                deploy_iso_path = os.path.join(tmpdir, 'iso')
+                deploy_iso_path = tmpdir_path / 'iso'
                 fetch(context, deploy_iso_href, deploy_iso_path)
 
             elif esp_image_href:
-                esp_image_path = os.path.join(tmpdir, 'esp')
+                esp_image_path = tmpdir_path / 'esp'
                 fetch(context, esp_image_href, esp_image_path)
 
             elif CONF.esp_image:
@@ -719,7 +780,7 @@ IMAGE_TYPE_WHOLE_DISK = 'whole-disk'
 VALID_IMAGE_TYPES = frozenset((IMAGE_TYPE_PARTITION, IMAGE_TYPE_WHOLE_DISK))
 
 
-def is_whole_disk_image(ctx, instance_info):
+def is_whole_disk_image(ctx: Any, instance_info: dict[str, Any]) -> Optional[bool]:
     """Find out if the image is a partition image or a whole disk image.
 
     :param ctx: an admin context
@@ -731,46 +792,46 @@ def is_whole_disk_image(ctx, instance_info):
     """
     image_source = instance_info.get('image_source')
     if not image_source:
-        return
+        return None
 
     image_type = instance_info.get('image_type')
     if image_type:
         # This logic reflects the fact that whole disk images are the default
         return image_type != IMAGE_TYPE_PARTITION
 
-    is_whole_disk_image = False
+    is_whole_disk_image_value = False
     if glance_utils.is_glance_image(image_source):
         try:
             iproperties = get_image_properties(ctx, image_source)
         except Exception:
-            return
+            return None
 
         image_type = iproperties.get('img_type')
         if image_type:
             return image_type != IMAGE_TYPE_PARTITION
 
-        is_whole_disk_image = (not iproperties.get('kernel_id')
-                               and not iproperties.get('ramdisk_id'))
+        is_whole_disk_image_value = (not iproperties.get('kernel_id')
+                                      and not iproperties.get('ramdisk_id'))
     elif service.is_container_registry_url(image_source):
         # NOTE(theJulia): We can safely assume, at least outright,
         # that all container images are whole disk images, unelss
         # someone wants to add explicit support.
-        is_whole_disk_image = True
+        is_whole_disk_image_value = True
     else:
         # Non glance image ref
         if is_source_a_path(ctx, instance_info.get('image_source')):
             # Nothing is returned if not valid or there was an error.
             # A third possibility is it is not a disk image, which would
             # still be None.
-            return
+            return None
         if (not instance_info.get('kernel')
             and not instance_info.get('ramdisk')):
-            is_whole_disk_image = True
+            is_whole_disk_image_value = True
 
-    return is_whole_disk_image
+    return is_whole_disk_image_value
 
 
-def is_source_a_path(ctx, image_source):
+def is_source_a_path(ctx: Any, image_source: Optional[str]) -> Optional[bool]:
     """Determine if the image source is a path.
 
     This method determines if a supplied URL is a path.
@@ -785,7 +846,7 @@ def is_source_a_path(ctx, image_source):
               None is returned.
     """
     if not image_source:
-        return
+        return None
     image_service = service.get_image_service(image_source,
                                               context=ctx)
     try:
@@ -794,7 +855,7 @@ def is_source_a_path(ctx, image_source):
     except Exception:
         # NOTE(TheJulia): I don't really like this pattern, *but*
         # the wholedisk image support is similar.
-        return
+        return None
 
     # NOTE(TheJulia): Files should have been caught almost exclusively
     # before with the Content-Length check.
@@ -830,27 +891,32 @@ def is_source_a_path(ctx, image_source):
     return False
 
 
-def _extract_iso(extract_iso, extract_dir):
+def _extract_iso(
+        extract_iso: Union[Path, str],
+        extract_dir: Union[Path, str]) -> None:
     # NOTE(rpittau): we could probably just extract the files we need
     # if we find them. Also we probably need to detect the correct iso
     # type (UDF, RR, JOLIET).
+    extract_dir_path = Path(extract_dir)
     iso = pycdlib.PyCdlib()
-    iso.open(extract_iso)
+    iso.open(str(extract_iso))
 
     for dirname, dirlist, filelist in iso.walk(iso_path='/'):
         dir_path = dirname.lstrip('/')
         for dir_iso in dirlist:
-            os.makedirs(os.path.join(extract_dir, dir_path, dir_iso))
+            (extract_dir_path / dir_path / dir_iso).mkdir(parents=True, exist_ok=True)
         for file in filelist:
-            file_path = os.path.join(extract_dir, dirname, file)
+            file_path = Path(extract_dir) / dirname / file
             iso.get_file_from_iso(
-                os.path.join(extract_dir, dir_path, file),
-                iso_path=file_path)
+                str(extract_dir_path / dir_path / file),
+                iso_path=str(file_path))
 
     iso.close()
 
 
-def _get_deploy_iso_files(deploy_iso, mountdir):
+def _get_deploy_iso_files(
+        deploy_iso: Union[Path, str],
+        mountdir: Union[Path, str]) -> tuple[dict[Union[Path, str], str], str, str]:
     """This function opens up the deploy iso used for deploy.
 
     :param deploy_iso: path to the deploy iso where its
@@ -863,10 +929,11 @@ def _get_deploy_iso_files(deploy_iso, mountdir):
                                       3. grub.cfg relative path.
 
     """
-    e_img_rel_path = None
-    e_img_path = None
-    grub_rel_path = None
-    grub_path = None
+    mountdir_path = Path(mountdir)
+    e_img_rel_path: Optional[str] = None
+    e_img_path: Optional[Path] = None
+    grub_rel_path: Optional[str] = None
+    grub_path: Optional[Path] = None
 
     try:
         _extract_iso(deploy_iso, mountdir)
@@ -875,29 +942,30 @@ def _get_deploy_iso_files(deploy_iso, mountdir):
         raise exception.ImageCreationFailed(image_type='iso', error=e)
 
     try:
-        for (dir, subdir, files) in os.walk(mountdir):
-            if 'efiboot.img' in files:
-                e_img_path = os.path.join(dir, 'efiboot.img')
-                e_img_rel_path = os.path.relpath(e_img_path,
-                                                 mountdir)
-            if 'grub.cfg' in files:
-                grub_path = os.path.join(dir, 'grub.cfg')
-                grub_rel_path = os.path.relpath(grub_path,
-                                                mountdir)
+        for dir_path in mountdir_path.rglob('*'):
+            if dir_path.is_file():
+                if dir_path.name == 'efiboot.img':
+                    e_img_path = dir_path
+                    e_img_rel_path = str(dir_path.relative_to(mountdir_path))
+                if dir_path.name == 'grub.cfg':
+                    grub_path = dir_path
+                    grub_rel_path = str(dir_path.relative_to(mountdir_path))
     except (OSError, IOError) as e:
         LOG.exception("examining the deploy iso failed.")
-        shutil.rmtree(mountdir)
+        shutil.rmtree(str(mountdir_path))
         raise exception.ImageCreationFailed(image_type='iso', error=e)
 
     # check if the variables are assigned some values or not during
     # walk of the mountdir.
     if not (e_img_path and e_img_rel_path and grub_path and grub_rel_path):
         error = (_("Deploy iso didn't contain efiboot.img or grub.cfg"))
-        shutil.rmtree(mountdir)
+        shutil.rmtree(str(mountdir_path))
         raise exception.ImageCreationFailed(image_type='iso', error=error)
 
-    uefi_path_info = {e_img_path: e_img_rel_path,
-                      grub_path: grub_rel_path}
+    uefi_path_info: dict[Union[Path, str], str] = {
+        e_img_path: e_img_rel_path,
+        grub_path: grub_rel_path
+    }
 
     # Returning a tuple as it makes the code simpler and clean.
     # uefi_path_info: is needed by the caller for _create_root_fs to create
@@ -909,7 +977,7 @@ def _get_deploy_iso_files(deploy_iso, mountdir):
     return uefi_path_info, e_img_rel_path, grub_rel_path
 
 
-def __node_or_image_cache(node):
+def __node_or_image_cache(node: Optional[Any]) -> str:
     """A helper for logging to determine if image cache or node uuid."""
     if not node:
         return 'image cache'
@@ -917,7 +985,9 @@ def __node_or_image_cache(node):
         return node.uuid
 
 
-def safety_check_image(image_path, node=None):
+def safety_check_image(
+        image_path: Union[Path, str],
+        node: Optional[Any] = None) -> str:
     """Performs a safety check on the supplied image.
 
     This method triggers the image format inspector's to both identify the
@@ -964,14 +1034,14 @@ def safety_check_image(image_path, node=None):
 RAW_IMAGE_FORMATS = {'raw', 'gpt'}  # gpt is a whole-disk image
 
 
-def image_format_permitted(img_format):
+def image_format_permitted(img_format: str) -> bool:
     permitted = set(CONF.conductor.permitted_image_formats)
     if 'raw' in permitted:
         permitted.update(RAW_IMAGE_FORMATS)
     return img_format in permitted
 
 
-def image_format_matches(actual_format, expected_format):
+def image_format_matches(actual_format: str, expected_format: str) -> bool:
     if expected_format in ['ari', 'aki']:
         # In this case, we have an ari or aki, meaning we're pulling
         # down a kernel/ramdisk, and this is rooted in a misunderstanding.
@@ -988,9 +1058,10 @@ def image_format_matches(actual_format, expected_format):
     return expected_format == actual_format
 
 
-def check_if_image_format_is_permitted(img_format,
-                                       expected_format=None,
-                                       node=None):
+def check_if_image_format_is_permitted(
+        img_format: str,
+        expected_format: Optional[str] = None,
+        node: Optional[Any] = None) -> None:
     """Checks image format consistency.
 
     :params img_format: The determined image format by name.
