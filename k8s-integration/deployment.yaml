@@ -1,0 +1,134 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: inspection-rules-controller
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: inspection-rules-controller
+rules:
+- apiGroups: ["ironic.openstack.org"]
+  resources: ["inspectionrules"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["ironic.openstack.org"]
+  resources: ["inspectionrules/status"]
+  verbs: ["get", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: inspection-rules-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: inspection-rules-controller
+subjects:
+- kind: ServiceAccount
+  name: inspection-rules-controller
+  namespace: default
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inspection-rules-controller-config
+  namespace: default
+data:
+  NAMESPACE: "default"
+  OUTPUT_PATH: "/etc/ironic/inspection_rules.yaml"
+  SYNC_INTERVAL: "30"
+  LOG_LEVEL: "INFO"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inspection-rules-controller
+  namespace: default
+  labels:
+    app: inspection-rules-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inspection-rules-controller
+  template:
+    metadata:
+      labels:
+        app: inspection-rules-controller
+    spec:
+      serviceAccountName: inspection-rules-controller
+      containers:
+      - name: controller
+        image: ironic/inspection-rules-controller:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --namespace=$(NAMESPACE)
+        - --output-path=$(OUTPUT_PATH)
+        - --sync-interval=$(SYNC_INTERVAL)
+        - --log-level=$(LOG_LEVEL)
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: inspection-rules-controller-config
+              key: NAMESPACE
+        - name: OUTPUT_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: inspection-rules-controller-config
+              key: OUTPUT_PATH
+        - name: SYNC_INTERVAL
+          valueFrom:
+            configMapKeyRef:
+              name: inspection-rules-controller-config
+              key: SYNC_INTERVAL
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: inspection-rules-controller-config
+              key: LOG_LEVEL
+        volumeMounts:
+        - name: rules-output
+          mountPath: /etc/ironic
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /etc/ironic/inspection_rules.yaml
+          initialDelaySeconds: 30
+          periodSeconds: 30
+      volumes:
+      - name: rules-output
+        emptyDir: {}
+      # To use a shared volume with Ironic conductor, replace emptyDir with:
+      # persistentVolumeClaim:
+      #   claimName: ironic-inspection-rules
+
+---
+# Optional: PersistentVolumeClaim for sharing rules with Ironic conductor
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ironic-inspection-rules
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Mi
+  # storageClassName: your-storage-class

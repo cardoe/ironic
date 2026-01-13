@@ -1,0 +1,115 @@
+---
+# Example InspectionRule: Set node properties based on inventory
+apiVersion: ironic.openstack.org/v1
+kind: InspectionRule
+metadata:
+  name: set-basic-properties
+  namespace: default
+spec:
+  description: "Set basic node properties from inspection data"
+  priority: 100
+  phase: main
+  sensitive: false
+  conditions:
+  - op: contains
+    args:
+      field: inventory/cpu
+      value: architecture
+  actions:
+  - op: set-attribute
+    args:
+      path: properties/cpu_arch
+      value: "{inventory[cpu][architecture]}"
+
+---
+# Example InspectionRule: Set BMC address from inventory
+apiVersion: ironic.openstack.org/v1
+kind: InspectionRule
+metadata:
+  name: set-bmc-address
+  namespace: default
+spec:
+  description: "Configure BMC driver info from discovered BMC address"
+  priority: 200
+  phase: main
+  sensitive: true
+  conditions:
+  - op: "!is-empty"
+    args:
+      field: inventory/bmc_address
+  actions:
+  - op: set-attribute
+    args:
+      path: driver_info/ipmi_address
+      value: "{inventory[bmc_address]}"
+  - op: log
+    args:
+      message: "Set BMC address for node {node[uuid]}"
+
+---
+# Example InspectionRule: Add traits based on hardware capabilities
+apiVersion: ironic.openstack.org/v1
+kind: InspectionRule
+metadata:
+  name: add-sriov-trait
+  namespace: default
+spec:
+  description: "Add SR-IOV trait if network devices support it"
+  priority: 150
+  phase: main
+  conditions:
+  - op: contains
+    args:
+      field: inventory/interfaces
+      value: has_sriov
+    loop:
+    - field: inventory/interfaces/0
+    - field: inventory/interfaces/1
+    multiple: any
+  actions:
+  - op: add-trait
+    args:
+      trait: HW_NIC_SRIOV
+
+---
+# Example InspectionRule: Fail inspection on specific conditions
+apiVersion: ironic.openstack.org/v1
+kind: InspectionRule
+metadata:
+  name: minimum-memory-check
+  namespace: default
+spec:
+  description: "Fail inspection if node has less than 8GB RAM"
+  priority: 500
+  phase: main
+  conditions:
+  - op: lt
+    args:
+      field: inventory/memory/physical_mb
+      value: 8192
+  actions:
+  - op: fail
+    args:
+      message: "Node has insufficient memory: {inventory[memory][physical_mb]}MB, minimum required is 8192MB"
+
+---
+# Example InspectionRule: Loop over disks to set attributes
+apiVersion: ironic.openstack.org/v1
+kind: InspectionRule
+metadata:
+  name: configure-disk-wwn
+  namespace: default
+spec:
+  description: "Set disk WWN for all disks in inventory"
+  priority: 50
+  phase: main
+  conditions:
+  - op: "!is-empty"
+    args:
+      field: inventory/disks
+  actions:
+  - op: set-attribute
+    args:
+      path: "properties/disks/{item[name]}/wwn"
+      value: "{item[wwn]}"
+    loop: "{inventory[disks]}"

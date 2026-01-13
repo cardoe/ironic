@@ -1,0 +1,3 @@
+# Python dependencies for the InspectionRule controller
+kubernetes>=28.1.0
+PyYAML>=6.0.1

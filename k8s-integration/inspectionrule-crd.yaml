@@ -1,0 +1,180 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: inspectionrules.ironic.openstack.org
+spec:
+  group: ironic.openstack.org
+  names:
+    kind: InspectionRule
+    listKind: InspectionRuleList
+    plural: inspectionrules
+    singular: inspectionrule
+    shortNames:
+    - ir
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        description: InspectionRule defines a rule for processing hardware inspection data
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            required:
+            - actions
+            properties:
+              uuid:
+                type: string
+                description: UUID of the inspection rule (optional, will be auto-generated if not provided)
+                pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              description:
+                type: string
+                description: Human-readable description of the rule
+                maxLength: 255
+              priority:
+                type: integer
+                description: Rule priority (higher priority rules are evaluated first)
+                minimum: 0
+                maximum: 9999
+                default: 0
+              phase:
+                type: string
+                description: Inspection phase when this rule should be applied
+                default: main
+                enum:
+                - main
+              sensitive:
+                type: boolean
+                description: Whether this rule handles sensitive data
+                default: false
+              scope:
+                type: string
+                description: Scope for applying this rule (optional)
+              conditions:
+                type: array
+                description: Conditions that must be met for the rule to apply
+                items:
+                  type: object
+                  required:
+                  - op
+                  - args
+                  properties:
+                    op:
+                      type: string
+                      description: Condition operator (can be prefixed with ! for negation)
+                      enum:
+                      - eq
+                      - "!eq"
+                      - lt
+                      - "!lt"
+                      - gt
+                      - "!gt"
+                      - is-empty
+                      - "!is-empty"
+                      - in-net
+                      - "!in-net"
+                      - matches
+                      - "!matches"
+                      - contains
+                      - "!contains"
+                      - one-of
+                      - "!one-of"
+                      - is-none
+                      - "!is-none"
+                      - is-true
+                      - "!is-true"
+                      - is-false
+                      - "!is-false"
+                    args:
+                      x-kubernetes-preserve-unknown-fields: true
+                      description: Arguments for the condition operator (array or object)
+                    loop:
+                      x-kubernetes-preserve-unknown-fields: true
+                      description: Loop configuration for processing multiple values (array or object)
+                    multiple:
+                      type: string
+                      description: How to evaluate multiple loop results
+                      enum:
+                      - any
+                      - all
+                      - first
+                      - last
+              actions:
+                type: array
+                description: Actions to perform when conditions are met
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                  - op
+                  - args
+                  properties:
+                    op:
+                      type: string
+                      description: Action operator
+                      enum:
+                      - fail
+                      - set-attribute
+                      - set-capability
+                      - unset-capability
+                      - extend-attribute
+                      - add-trait
+                      - remove-trait
+                      - set-plugin-data
+                      - extend-plugin-data
+                      - unset-plugin-data
+                      - log
+                      - del-attribute
+                      - set-port-attribute
+                      - extend-port-attribute
+                      - del-port-attribute
+                      - api-call
+                    args:
+                      x-kubernetes-preserve-unknown-fields: true
+                      description: Arguments for the action operator (array or object)
+                    loop:
+                      x-kubernetes-preserve-unknown-fields: true
+                      description: Loop configuration for processing multiple values (array or object)
+          status:
+            type: object
+            description: Status of the inspection rule
+            properties:
+              state:
+                type: string
+                description: Current state of the rule
+                enum:
+                - Active
+                - Error
+                - Pending
+              lastSyncTime:
+                type: string
+                format: date-time
+                description: Last time this rule was synced to the rules file
+              message:
+                type: string
+                description: Human-readable message about the rule status
+    additionalPrinterColumns:
+    - name: Priority
+      type: integer
+      jsonPath: .spec.priority
+    - name: Phase
+      type: string
+      jsonPath: .spec.phase
+    - name: Description
+      type: string
+      jsonPath: .spec.description
+    - name: State
+      type: string
+      jsonPath: .status.state
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
