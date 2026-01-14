@@ -21,7 +21,8 @@ from ironic.objects import notification
 class InspectionRule(base.IronicObject, object_base.VersionedObjectDictCompat):
     # Version 1.0: Initial version
     # Version 1.1: Relevant methods changed to be remotable methods.
-    VERSION = '1.1'
+    # Version 1.2: Added owner and public fields for project ownership
+    VERSION = '1.2'
 
     dbapi = db_api.get_instance()
 
@@ -30,9 +31,10 @@ class InspectionRule(base.IronicObject, object_base.VersionedObjectDictCompat):
         'uuid': object_fields.UUIDField(nullable=False),
         'priority': object_fields.IntegerField(default=0),
         'description': object_fields.StringField(nullable=True),
+        'owner': object_fields.StringField(nullable=True),
+        'public': object_fields.BooleanField(default=False),
         'sensitive': object_fields.BooleanField(default=False),
         'phase': object_fields.StringField(nullable=True, default='main'),
-        'scope': object_fields.StringField(nullable=True),
         'actions': object_fields.ListOfFlexibleDictsField(nullable=False),
         'conditions': object_fields.ListOfFlexibleDictsField(nullable=True),
     }
@@ -168,14 +170,16 @@ class InspectionRuleCRUDNotification(notification.NotificationBase):
 @base.IronicObjectRegistry.register
 class InspectionRuleCRUDPayload(notification.NotificationPayloadBase):
     # Version 1.0: Initial version
-    VERSION = '1.0'
+    # Version 1.1: Added owner and public fields
+    VERSION = '1.1'
 
     SCHEMA = {
         'created_at': ('inspection_rule', 'created_at'),
         'description': ('inspection_rule', 'description'),
         'phase': ('inspection_rule', 'phase'),
         'priority': ('inspection_rule', 'priority'),
-        'scope': ('inspection_rule', 'scope'),
+        'owner': ('inspection_rule', 'owner'),
+        'public': ('inspection_rule', 'public'),
         'sensitive': ('inspection_rule', 'sensitive'),
         'actions': ('inspection_rule', 'actions'),
         'conditions': ('inspection_rule', 'conditions'),
@@ -188,7 +192,8 @@ class InspectionRuleCRUDPayload(notification.NotificationPayloadBase):
         'description': object_fields.StringField(nullable=True),
         'phase': object_fields.StringField(nullable=True, default='main'),
         'priority': object_fields.IntegerField(default=0),
-        'scope': object_fields.StringField(nullable=True),
+        'owner': object_fields.StringField(nullable=True),
+        'public': object_fields.BooleanField(default=False),
         'sensitive': object_fields.BooleanField(default=False),
         'actions': object_fields.ListOfFlexibleDictsField(nullable=False),
         'conditions': object_fields.ListOfFlexibleDictsField(nullable=True),

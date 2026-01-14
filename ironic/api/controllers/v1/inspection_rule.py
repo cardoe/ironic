@@ -92,8 +92,8 @@ def convert_with_links(rpc_rule, fields=None, sanitize=True):
     """Add links to the inspection rule."""
     inspection_rule = api_utils.object_to_dict(
         rpc_rule,
-        fields=('description', 'priority', 'sensitive', 'phase', 'conditions',
-                'actions'),
+        fields=('description', 'priority', 'owner', 'public', 'sensitive',
+                'phase', 'conditions', 'actions'),
         link_resource='inspection',
     )
 
@@ -156,7 +156,9 @@ class InspectionRuleController(rest.RestController):
         :param detail: Optional, boolean to indicate whether retrieve a list
                        of inspection rules with detail.
         """
-        api_utils.check_policy('baremetal:inspection_rule:get')
+        # Check policy and determine project filter
+        project_id = api_utils.check_list_policy('inspection_rule')
+
         api_utils.check_allowed_fields(fields)
         api_utils.check_allowed_fields([sort_key])
 
@@ -176,18 +178,20 @@ class InspectionRuleController(rest.RestController):
             marker_obj = objects.InspectionRule.get_by_uuid(
                 api.request.context, marker)
 
+        filters = {}
+        if phase:
+            filters['phase'] = phase
+        if project_id:
+            filters['project'] = project_id
+
         rules = objects.InspectionRule.list(
             api.request.context, limit=limit, marker=marker_obj,
-            sort_key=sort_key, sort_dir=sort_dir)
+            sort_key=sort_key, sort_dir=sort_dir, filters=filters)
 
         parameters = {'sort_key': sort_key, 'sort_dir': sort_dir}
 
         if detail is not None:
             parameters['detail'] = detail
-
-        filters = {}
-        if phase:
-            filters['phase'] = phase
 
         return list_convert_with_links(
             rules, limit, fields=fields, filters=filters, **parameters)
@@ -211,9 +215,16 @@ class InspectionRuleController(rest.RestController):
         :param fields: Optional, a list with a specified set of fields
             of the resource to be returned.
         """
-        api_utils.check_policy('baremetal:inspection_rule:get')
-        inspection_rule = objects.InspectionRule.get_by_uuid(
-            api.request.context, inspection_rule_uuid)
+        try:
+            # Try standard policy check (requires ownership)
+            inspection_rule = (
+                api_utils.check_inspection_rule_policy_and_retrieve(
+                    'baremetal:inspection_rule:get', inspection_rule_uuid))
+        except exception.NotAuthorized:
+            # Fallback: allow access if inspection rule is public
+            inspection_rule = (
+                api_utils.check_and_retrieve_public_inspection_rule(
+                    inspection_rule_uuid))
 
         api_utils.check_allowed_fields(fields)
         return convert_with_links(inspection_rule, fields=fields)
@@ -234,6 +245,29 @@ class InspectionRuleController(rest.RestController):
         """
         context = api.request.context
         api_utils.check_policy('baremetal:inspection_rule:create')
+
+        cdict = context.to_policy_values()
+        if cdict.get('system_scope') != 'all':
+            project_id = None
+            requested_owner = inspection_rule.get('owner', None)
+            if cdict.get('project_id', False):
+                project_id = cdict.get('project_id')
+
+            if requested_owner and requested_owner != project_id:
+                # Translation: If project scoped, and an owner has been
+                # requested, and that owner does not match the requester's
+                # project ID value.
+                msg = _("Cannot create an inspection rule as a project scoped "
+                        "admin with an owner other than your own project.")
+                raise exception.Invalid(msg)
+
+            if project_id and inspection_rule.get('public', False):
+                msg = _("Cannot create a public inspection rule as a project "
+                        "scoped admin.")
+                raise exception.Invalid(msg)
+            # Finally, note the project ID
+            inspection_rule['owner'] = project_id
+
         ir_validation.validate_rule(inspection_rule)
 
         if not inspection_rule.get('uuid'):
@@ -249,6 +283,35 @@ class InspectionRuleController(rest.RestController):
         api_rule = convert_with_links(new_rule)
         notify.emit_end_notification(context, new_rule, 'create')
         return api_rule
+
+    def _authorize_patch_and_get_inspection_rule(self, inspection_rule_uuid,
+                                                   patch):
+        # deal with attribute-specific policy rules
+        policy_checks = []
+        generic_update = False
+
+        paths_to_policy = (
+            ('/owner', 'baremetal:inspection_rule:update:owner'),
+            ('/public', 'baremetal:inspection_rule:update:public'),
+        )
+        for p in patch:
+            # Process general direct path to policy map
+            rule_match_found = False
+            for check_path, policy_name in paths_to_policy:
+                if p['path'].startswith(check_path):
+                    policy_checks.append(policy_name)
+                    # Break, policy found
+                    rule_match_found = True
+                    break
+            if not rule_match_found:
+                generic_update = True
+
+        if generic_update or not policy_checks:
+            # If we couldn't find specific policy to apply,
+            # apply the update policy check.
+            policy_checks.append('baremetal:inspection_rule:update')
+        return api_utils.check_multiple_inspection_rule_policies_and_retrieve(
+            policy_checks, inspection_rule_uuid)
 
     @METRICS.timer('InspectionRuleController.patch')
     @method.expose()
@@ -271,11 +334,25 @@ class InspectionRuleController(rest.RestController):
         :param patch: a json PATCH document to apply to this inspection rule.
         """
         context = api.request.context
-        api_utils.check_policy('baremetal:inspection_rule:update')
 
-        rpc_rule = objects.InspectionRule.get_by_uuid(context,
-                                                      inspection_rule_uuid)
+        rpc_rule = self._authorize_patch_and_get_inspection_rule(
+            inspection_rule_uuid, patch)
         rule = rpc_rule.as_dict()
+
+        owner = api_utils.get_patch_values(patch, '/owner')
+        public = api_utils.get_patch_values(patch, '/public')
+
+        if owner:
+            # NOTE: There should not be an owner for a public rule,
+            # but an owned rule can be set to non-public and assigned an
+            # owner atomically
+            public_value = public[0] if public else False
+            if rule.get('public') and (not public) or public_value:
+                msg = _("There cannot be an owner for a public inspection rule")
+                raise exception.PatchError(patch=patch, reason=msg)
+
+        if public:
+            rule['owner'] = None
 
         sensitive_patch = api_utils.get_patch_values(patch, '/sensitive')
         sensitive = sensitive_patch[0] if sensitive_patch else None
@@ -323,10 +400,12 @@ class InspectionRuleController(rest.RestController):
         :param inspection_rule_uuid: UUID of an inspection rule.
         :param confirm: Confirmation string. Must be 'true' for bulk deletion.
         """
+        inspection_rule = (
+            api_utils.check_inspection_rule_policy_and_retrieve(
+                policy_name='baremetal:inspection_rule:delete',
+                inspection_rule_uuid=inspection_rule_uuid))
+
         context = api.request.context
-        api_utils.check_policy('baremetal:inspection_rule:delete')
-        inspection_rule = objects.InspectionRule.get_by_uuid(
-            context, inspection_rule_uuid)
         notify.emit_start_notification(context, inspection_rule, 'delete')
         with notify.handle_error_notification(context, inspection_rule,
                                               'delete'):

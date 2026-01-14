@@ -574,6 +574,7 @@ class InspectionRule(Base):
     __table_args__ = (
         schema.UniqueConstraint('uuid', name='uniq_inspection_rules0uuid'),
         Index('inspection_rule_scope_idx', 'scope'),
+        Index('inspection_rule_owner_idx', 'owner'),
         Index('inspection_rule_phase_idx', 'phase'),
         table_args())
     id = Column(Integer, primary_key=True)
@@ -581,6 +582,8 @@ class InspectionRule(Base):
     priority = Column(Integer, nullable=False, default=0)
     description = Column(String(255), nullable=True)
     scope = Column(String(255), nullable=True)
+    owner = Column(String(255), nullable=True)
+    public = Column(Boolean, default=False)
     sensitive = Column(Boolean, default=False)
     phase = Column(String(16), nullable=True, default='main')
     conditions = Column(db_types.JsonEncodedList(mysql_as_long=True),

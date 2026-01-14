@@ -1839,6 +1839,70 @@ def check_multiple_runbook_policies_and_retrieve(policy_names,
     return rpc_runbook
 
 
+def get_rpc_inspection_rule(inspection_rule_uuid):
+    """Get the RPC inspection rule from the UUID.
+
+    :param inspection_rule_uuid: the UUID of an inspection rule.
+
+    :returns: The RPC inspection rule.
+    :raises: InspectionRuleNotFound if the inspection rule is not found.
+    """
+    return objects.InspectionRule.get_by_uuid(api.request.context,
+                                              inspection_rule_uuid)
+
+
+def check_inspection_rule_policy_and_retrieve(policy_name,
+                                               inspection_rule_uuid):
+    """Check if policy authorizes this request on an inspection rule.
+
+    :param: policy_name: Name of the policy to check.
+    :param: inspection_rule_uuid: the UUID of an inspection rule.
+
+    :raises: HTTPForbidden if the policy forbids access.
+    :raises: InspectionRuleNotFound if the inspection rule is not found.
+    :return: RPC inspection rule
+    """
+    rpc_rule = get_rpc_inspection_rule(inspection_rule_uuid)
+    check_owner_policy(object_type='inspection_rule', policy_name=policy_name,
+                       owner=rpc_rule['owner'])
+    return rpc_rule
+
+
+def check_and_retrieve_public_inspection_rule(inspection_rule_uuid):
+    """If policy authorization check fails, check if rule is public.
+
+    :param: inspection_rule_uuid: the UUID of an inspection rule.
+    :raises: HTTPForbidden if inspection rule is not public.
+    :return: RPC inspection rule identified by inspection_rule_uuid
+    """
+    rpc_rule = get_rpc_inspection_rule(inspection_rule_uuid)
+    if not rpc_rule.public:
+        raise exception.HTTPForbidden
+    return rpc_rule
+
+
+def check_multiple_inspection_rule_policies_and_retrieve(
+        policy_names, inspection_rule_uuid):
+    """Check if policies authorize this request on an inspection rule.
+
+    :param: policy_names: List of policy names to check.
+    :param: inspection_rule_uuid: the UUID of an inspection rule.
+
+    :raises: HTTPForbidden if the policy forbids access.
+    :raises: InspectionRuleNotFound if the inspection rule is not found.
+    :return: RPC inspection rule identified by inspection_rule_uuid
+    """
+    rpc_rule = None
+    for policy_name in policy_names:
+        if rpc_rule is None:
+            rpc_rule = check_inspection_rule_policy_and_retrieve(
+                policy_names[0], inspection_rule_uuid)
+        else:
+            check_owner_policy('inspection_rule', policy_name,
+                               rpc_rule['owner'])
+    return rpc_rule
+
+
 def check_list_policy(object_type, owner=None):
     """Check if the list policy authorizes this request on an object.
 

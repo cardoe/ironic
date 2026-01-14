@@ -155,6 +155,8 @@ create_request_body = {
             },
         },
         'description': {'type': ['string', 'null'], 'maxLength': 255},
+        'owner': {'type': ['string', 'null'], 'maxLength': 255},
+        'public': {'type': ['boolean', 'null']},
         # TODO(stephenfin): We should move validation of this value here. It's
         # currently handled in validate_rule
         'phase': {'type': ['string', 'null'], 'maxLength': 16},

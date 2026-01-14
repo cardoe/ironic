@@ -3309,12 +3309,20 @@ class Connection(api.Connection):
         query = (sa.select(models.InspectionRule))
         if filters is None:
             filters = dict()
-        supported_filters = {'phase', 'scope'}
+        supported_filters = {'phase', 'scope', 'owner', 'public', 'project'}
         unsupported_filters = set(filters).difference(supported_filters)
         if unsupported_filters:
             msg = _("SqlAlchemy API does not support "
                     "filtering by %s") % ', '.join(unsupported_filters)
             raise ValueError(msg)
+
+        # Handle project filter specially (like runbooks)
+        if 'project' in filters:
+            project = filters.pop('project')
+            query = query.filter((models.InspectionRule.owner == project)
+                                 | (models.InspectionRule.public))
+
+        # Handle remaining filters
         for field in filters:
             query = query.filter_by(**{field: filters[field]})
         return _paginate_query(models.InspectionRule, limit, marker,

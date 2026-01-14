@@ -135,6 +135,30 @@ RUNBOOK_CREATOR = (
     '(' + SYSTEM_MEMBER + ') or role:manager or role:service' # noqa
 )
 
+# Inspection rule ownership policies
+INSPECTION_RULE_OWNER_ADMIN = ('role:admin and '
+                                'project_id:%(inspection_rule.owner)s')
+INSPECTION_RULE_OWNER_MANAGER = ('role:manager and '
+                                 'project_id:%(inspection_rule.owner)s')
+INSPECTION_RULE_OWNER_MEMBER = ('role:member and '
+                                'project_id:%(inspection_rule.owner)s')
+INSPECTION_RULE_OWNER_READER = ('role:reader and '
+                                'project_id:%(inspection_rule.owner)s')
+
+INSPECTION_RULE_ADMIN = (
+    '(' + SYSTEM_MEMBER + ') or (' + INSPECTION_RULE_OWNER_MANAGER
+    + ') or role:service'  # noqa
+)
+
+INSPECTION_RULE_READER = (
+    '(' + SYSTEM_READER + ') or (' + INSPECTION_RULE_OWNER_READER
+    + ') or role:service'  # noqa
+)
+
+INSPECTION_RULE_CREATOR = (
+    '(' + SYSTEM_MEMBER + ') or role:manager or role:service'  # noqa
+)
+
 # Used for general operations like changing provision state.
 SYSTEM_OR_OWNER_MEMBER_AND_LESSEE_ADMIN = (
     '(' + SYSTEM_MEMBER + ') or (' + SYSTEM_SERVICE + ') or (' + PROJECT_OWNER_MEMBER + ') or (' + PROJECT_LESSEE_ADMIN + ') or (' + PROJECT_LESSEE_MANAGER + ') or (' + PROJECT_SERVICE + ')'  # noqa
@@ -2012,11 +2036,20 @@ runbook_policies = [
 rule_policies = [
     policy.DocumentedRuleDefault(
         name='baremetal:inspection_rule:get',
-        check_str=SYSTEM_READER,
+        check_str=INSPECTION_RULE_READER,
         scope_types=['system', 'project'],
         description='Get inspection rule(s)',
         operations=[{'path': '/inspection_rules', 'method': 'GET'},
                     {'path': '/inspection_rules/{rule_id}', 'method': 'GET'}],
+    ),
+    policy.DocumentedRuleDefault(
+        name='baremetal:inspection_rule:list',
+        check_str=API_READER,
+        scope_types=['system', 'project'],
+        description='Retrieve inspection_rule records filtered by project',
+        operations=[
+            {'path': '/inspection_rules', 'method': 'GET'}
+        ],
     ),
     policy.DocumentedRuleDefault(
         name='baremetal:inspection_rule:list_all',
@@ -2029,22 +2062,38 @@ rule_policies = [
     ),
     policy.DocumentedRuleDefault(
         name='baremetal:inspection_rule:create',
-        check_str=SYSTEM_ADMIN,
+        check_str=INSPECTION_RULE_CREATOR,
         scope_types=['system', 'project'],
         description='Create inspection rule',
         operations=[{'path': '/inspection_rules', 'method': 'POST'}],
     ),
     policy.DocumentedRuleDefault(
         name='baremetal:inspection_rule:update',
-        check_str=SYSTEM_ADMIN,
+        check_str=INSPECTION_RULE_ADMIN,
         scope_types=['system', 'project'],
         description='Update an inspection rule',
         operations=[{'path': '/inspection_rules/{rule_id}',
                      'method': 'PATCH'}],
     ),
     policy.DocumentedRuleDefault(
+        name='baremetal:inspection_rule:update:owner',
+        check_str=SYSTEM_MEMBER,
+        scope_types=['system', 'project'],
+        description='Change the owner of an inspection rule',
+        operations=[{'path': '/inspection_rules/{rule_id}',
+                     'method': 'PATCH'}],
+    ),
+    policy.DocumentedRuleDefault(
+        name='baremetal:inspection_rule:update:public',
+        check_str=SYSTEM_MEMBER,
+        scope_types=['system', 'project'],
+        description='Change the public flag of an inspection rule',
+        operations=[{'path': '/inspection_rules/{rule_id}',
+                     'method': 'PATCH'}],
+    ),
+    policy.DocumentedRuleDefault(
         name='baremetal:inspection_rule:delete',
-        check_str=SYSTEM_ADMIN,
+        check_str=INSPECTION_RULE_ADMIN,
         scope_types=['system', 'project'],
         description='Delete an inspection rule',
         operations=[{'path': '/inspection_rules', 'method': 'DELETE'},
