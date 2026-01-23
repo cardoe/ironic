@@ -324,6 +324,21 @@ class TaskManager(object):
     def volume_targets(self, volume_targets):
         self._volume_targets = volume_targets
 
+    def ensure_node(self):
+        """Ensure node is loaded and return it.
+
+        This method provides a type-safe way to access the node, asserting
+        that it is not None. Use this in contexts where the node must be
+        present.
+
+        :returns: The node object
+        :raises: RuntimeError if node is None (already released)
+        """
+        if self.node is None:
+            raise RuntimeError(
+                "Task node is None - resources may have been released")
+        return self.node
+
     def load_driver(self):
         if self.driver is None:
             self.driver = driver_factory.build_driver_for_task(self)
