@@ -17,10 +17,10 @@
 import collections
 import hashlib
 import os
+from typing import TYPE_CHECKING
 from urllib import parse as urlparse
 
 from oslo_log import log
-from oslo_utils import excutils
 from oslo_utils import netutils
 from oslo_utils import strutils
 import rfc3986
@@ -31,6 +31,9 @@ from ironic.common import exception
 from ironic.common.i18n import _
 from ironic.conf import CONF
 from ironic.drivers import utils as driver_utils
+
+if TYPE_CHECKING:
+    from sushy.resources.system.system import System as SushySystem
 
 LOG = log.getLogger(__name__)
 
@@ -386,7 +389,7 @@ def get_first_controller(storage):
         return controllers[0] if controllers else None
 
 
-def get_system(node):
+def get_system(node) -> 'SushySystem':
     """Get a Redfish System that represents a node.
 
     :param node: an Ironic node object
@@ -508,11 +511,11 @@ def _get_connection(node, lambda_fun, *args):
     try:
         return _get_cached_connection(lambda_fun, *args)
     except exception.RedfishConnectionError as e:
-        with excutils.save_and_reraise_exception():
-            LOG.error('Failed to connect to Redfish at %(address)s for '
-                      'node %(node)s. Error: %(error)s',
-                      {'address': driver_info['address'],
-                       'node': node.uuid, 'error': e})
+        LOG.error('Failed to connect to Redfish at %(address)s for '
+                  'node %(node)s. Error: %(error)s',
+                  {'address': driver_info['address'],
+                   'node': node.uuid, 'error': e})
+        raise
 
 
 def get_enabled_macs(task, system):
