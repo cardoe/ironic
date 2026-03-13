@@ -1,0 +1,34 @@
+# Copy this file to terraform.tfvars and fill in your values.
+#
+# Required: cloud_name must match an entry in your clouds.yaml
+
+cloud_name            = "mycloud"
+external_network_name = "external"
+
+# Path to the Cisco Nexus 9000v QCOW2 image on your local machine.
+# Download from https://software.cisco.com (search "Nexus 9000v").
+cisco_9k_image_path = "/path/to/nexus9300v64.10.3.7.M.qcow2"
+
+# Name of an Ubuntu 24.04 image already in the hosting cloud's Glance.
+devstack_image_name = "Ubuntu-24.04"
+
+# Flavors - adjust to match your hosting cloud's available flavors.
+# DevStack needs significant resources for running all OpenStack services.
+devstack_flavor  = "m1.xlarge"    # 8 vCPU, 32 GB RAM, 100 GB disk
+cisco_9k_flavor  = "m1.large"     # 2 vCPU, 8 GB RAM
+baremetal_flavor = "m1.medium"    # Size visible to Ironic as "hardware"
+
+# SSH key pair (must exist in the hosting cloud)
+key_pair_name = "mykey"
+
+# Number of virtual bare metal nodes
+baremetal_node_count = 3
+
+# Network configuration (defaults are usually fine)
+# mgmt_subnet_cidr = "172.24.5.0/24"
+# switch_mgmt_ip   = "172.24.5.20"
+# devstack_mgmt_ip = "172.24.5.10"
+# dns_nameservers  = ["8.8.8.8", "8.8.4.4"]
+
+# Switch admin password
+# switch_password = "system_s3cret!"

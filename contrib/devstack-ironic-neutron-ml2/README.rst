@@ -1,383 +1,364 @@
 =====================================================================
-DevStack: Ironic + Neutron ML2 with sushy-tools and Cisco Nexus 9k
+DevStack: Ironic + Neutron ML2 with sushy-tools Nova Driver and
+Cisco Nexus 9000v on a Hosting OpenStack Cloud
 =====================================================================
 
-This guide walks through setting up a development environment for working on
-Ironic and Neutron ML2 drivers. The environment uses:
-
-* **DevStack** deployed on a real OpenStack cloud instance (or bare-metal host)
-* **sushy-tools** as the Redfish BMC emulator for virtual bare metal nodes
-* **Nova with Ironic virt driver** to manage bare metal (virtual) nodes
-* **Cisco Nexus 9000v switch simulator** attached to virtual bare metal node
-  ports for testing Neutron ML2 driver integration via networking-generic-switch
+This guide sets up a development environment for working on Ironic and
+Neutron ML2 drivers. The key design: a **hosting OpenStack cloud** provides
+all the compute and networking, while **DevStack** runs inside a VM on that
+cloud. sushy-tools uses the **Nova driver** to manage sibling VMs (on the
+same hosting cloud) as virtual bare metal nodes. A **Cisco Nexus 9000v**
+switch simulator (also a Nova instance) sits between the bare metal VMs
+and DevStack, providing realistic VLAN switching for ML2 driver testing.
 
 .. contents:: Table of Contents
    :local:
    :depth: 3
 
-Architecture Overview
-=====================
+Architecture
+============
+
+Two layers: the hosting cloud provides infrastructure; DevStack runs
+inside it and manages "bare metal" that is actually VMs on the same cloud.
 
 ::
 
-  +-----------------------------------------------------------------+
-  |  Host (OpenStack VM or Bare Metal)                              |
-  |                                                                 |
-  |  +-----------------------------------------------------------+  |
-  |  | DevStack                                                  |  |
-  |  |                                                           |  |
-  |  |  +----------+  +----------+  +---------+  +----------+   |  |
-  |  |  | Keystone |  | Glance   |  | Neutron |  | Nova     |   |  |
-  |  |  +----------+  +----------+  +---------+  +----------+   |  |
-  |  |                                  |            |           |  |
-  |  |                           +------+------+     |           |  |
-  |  |                           |  ML2 Plugin |     |           |  |
-  |  |                           | (NGS+OVS)   |     |           |  |
-  |  |                           +------+------+     |           |  |
-  |  |                                  |            |           |  |
-  |  |  +----------+  +-------------+   |      +----+-------+   |  |
-  |  |  | Ironic   |  | sushy-tools |   |      | Ironic     |   |  |
-  |  |  | API      |  | (Redfish    |   |      | Conductor  |   |  |
-  |  |  |          |  |  Emulator)  |   |      |            |   |  |
-  |  |  +----------+  +------+------+   |      +----+-------+   |  |
-  |  |                       |          |           |            |  |
-  |  +-----------------------------------------------------------+  |
-  |                          |          |           |               |
-  |  +-----------------------+----------+-----------+------------+  |
-  |  | libvirt / QEMU                                            |  |
-  |  |                                                           |  |
-  |  |  +-----------+  +-----------+  +-----------+              |  |
-  |  |  | BM Node 0 |  | BM Node 1 |  | BM Node 2 |             |  |
-  |  |  | (VM)      |  | (VM)      |  | (VM)      |             |  |
-  |  |  +-----+-----+  +-----+-----+  +-----+-----+             |  |
-  |  |        |              |              |                     |  |
-  |  +--------+--------------+--------------+--------------------+  |
-  |           |              |              |                       |
-  |  +--------+--------------+--------------+--------------------+  |
-  |  | Virtual Network Bridges (Linux bridges)                   |  |
-  |  |   sim-node-0-p0  sim-node-1-p0  sim-node-2-p0             |  |
-  |  |       |               |               |                   |  |
-  |  |   sw-node-0-p0   sw-node-1-p0   sw-node-2-p0              |  |
-  |  +--------+--------------+--------------+--------------------+  |
-  |           |              |              |                       |
-  |  +--------+--------------+--------------+--------------------+  |
-  |  | Cisco Nexus 9000v Simulator (QEMU VM)                     |  |
-  |  |   Ethernet1/2    Ethernet1/3    Ethernet1/4                |  |
-  |  |                                                           |  |
-  |  |   Ethernet1/1 (trunk) --> OVS br-int                      |  |
-  |  |   mgmt0               --> br-infra (172.24.5.20)          |  |
-  |  +-----------------------------------------------------------+  |
-  +-----------------------------------------------------------------+
+  Hosting OpenStack Cloud (Geneve tenant networks)
+  ================================================
+
+  Network: ironic-mgmt (Geneve, DHCP, router to external)
+  -------------------------------------------------------
+  172.24.5.10           172.24.5.20
+  DevStack VM --------> Cisco 9k sim (mgmt0)
+  (floating IP)         (SSH config, NGS access)
+
+
+  Network: ironic-trunk (Geneve, no DHCP, port security off)
+  ----------------------------------------------------------
+  DevStack VM --------> Cisco 9k sim (Ethernet1/1 trunk)
+  (OVS brbm)           (carries all VLANs)
+
+
+  Network: ironic-bm-0 (Geneve, no DHCP, port security off)
+  ----------------------------------------------------------
+  BM Node 0 ----------> Cisco 9k sim (Ethernet1/2 access)
+
+  Network: ironic-bm-1 (Geneve, no DHCP, port security off)
+  ----------------------------------------------------------
+  BM Node 1 ----------> Cisco 9k sim (Ethernet1/3 access)
+
+  Network: ironic-bm-2 (Geneve, no DHCP, port security off)
+  ----------------------------------------------------------
+  BM Node 2 ----------> Cisco 9k sim (Ethernet1/4 access)
+
+
+  Data Flow (during Ironic provisioning)
+  =======================================
+
+  1. Ironic tells sushy-tools to boot BM Node 0 via virtual media
+  2. sushy-tools calls hosting cloud Nova API to rebuild instance
+  3. NGS configures Cisco 9k: Ethernet1/2 -> provisioning VLAN
+  4. IPA traffic: BM Node 0 -> ironic-bm-0 -> Cisco 9k Ethernet1/2
+     -> trunk (VLAN tagged) -> ironic-trunk -> DevStack OVS brbm
+     -> Neutron DHCP / Ironic conductor
+  5. IPA phones home, Ironic deploys the OS
+  6. NGS switches Ethernet1/2 to tenant VLAN
+
+Key design decisions:
+
+* **Geneve networks** provide L2 connectivity between VMs. Each
+  "cable" between a bare metal node and a switch port is a separate
+  Geneve network. This gives clean isolation without trunk port
+  support on the hosting cloud.
+
+* **Port security is disabled** on trunk and bare metal networks so
+  VLAN-tagged frames and arbitrary DHCP can flow through.
+
+* **DHCP is disabled** on bare metal networks so the hosting cloud's
+  Neutron doesn't interfere. All bare metal DHCP comes from DevStack's
+  Neutron via the switch.
+
+* **The Cisco 9k runs as a Nova instance** with one NIC per network.
+  NIC ordering matters: NIC 0 = mgmt0, NIC 1 = Ethernet1/1 (trunk),
+  NIC 2+ = Ethernet1/2+ (access ports).
+
+* **Bare metal VMs are pre-created** by Terraform, then managed by
+  sushy-tools via the hosting cloud's Nova API. Ironic enrolls them
+  using their Nova instance UUIDs as Redfish system IDs.
 
 Prerequisites
 =============
 
-Hardware Requirements
----------------------
+Hosting Cloud Requirements
+--------------------------
 
-The host machine (physical or cloud VM) needs:
+* Geneve (or VXLAN) tenant networks with the ability to create many
+* Ability to disable port security on networks/ports
+* UEFI boot support for Nova instances (OVMF firmware) -- needed for
+  the Cisco 9k simulator
+* Sufficient quota: ~5 instances, ~6 networks, ~15 ports, 1 floating IP
+* An Ubuntu 24.04 image in Glance
+* Appropriate flavors (see below)
 
-* **CPU**: 8+ vCPUs (nested virtualization required if running in a VM)
-* **RAM**: 32 GB minimum (recommended 48+ GB)
+Flavor Sizing
+-------------
 
-  - DevStack services: ~4 GB
-  - Cisco Nexus 9000v simulator: 8 GB
-  - Each bare metal VM node: 2.5-4 GB (x3 = 7.5-12 GB)
-  - IPA ramdisk and OS overhead: ~4 GB
+============== ====== ====== ======
+VM             vCPUs  RAM    Disk
+============== ====== ====== ======
+DevStack       8+     32 GB  100 GB
+Cisco 9k       2      8 GB   10 GB
+Bare metal (x3) 1-2   2-4 GB 10 GB
+============== ====== ====== ======
 
-* **Disk**: 100 GB+ free space
-* **Network**: At least one NIC with internet access
+Local Requirements
+------------------
 
-Software Requirements
----------------------
+* **Terraform** >= 1.0 with the OpenStack provider
+* **OpenStack CLI** (``python-openstackclient``) configured with
+  ``clouds.yaml`` for the hosting cloud
+* **Cisco Nexus 9000v QCOW2 image** -- download from
+  https://software.cisco.com (search "Nexus 9000v" or "NX-OSv 9000",
+  requires a Cisco account)
+* **SSH key pair** registered in the hosting cloud
 
-* **OS**: Ubuntu 24.04 LTS (Noble) -- strongly recommended
-* **Nested virtualization**: Must be enabled if running inside a VM
+Setup
+=====
 
-  Check with::
-
-    cat /sys/module/kvm_intel/parameters/nested  # Intel
-    cat /sys/module/kvm_amd/parameters/nested    # AMD
-
-  The output should be ``Y`` or ``1``.
-
-* **Git**: For cloning repositories
-* **Python 3.10+**: Required by Ironic
-
-Cisco Nexus 9000v Simulator Image
-----------------------------------
-
-You must obtain the Cisco Nexus 9000v (NX-OSv 9000) QCOW2 disk image. This is
-available from Cisco's software download portal and requires a Cisco account
-(and potentially a service contract) to access.
-
-1. Go to https://software.cisco.com
-2. Search for "Nexus 9000v" or "NX-OSv 9000"
-3. Download the QCOW2 image (e.g., ``nexus9300v64.10.3.7.M.qcow2``)
-4. Place the image at ``/opt/stack/nexus9300v64.10.3.7.M.qcow2``
-
-.. note::
-   The image filename may vary by version. If you use a different version,
-   update the ``CISCO_NEXUS_IMAGE`` variable in the scripts accordingly.
-   The devstack plugin currently expects the above filename by default.
-
-Setup Steps
-===========
-
-Step 1: Prepare the Host
-------------------------
-
-Run the prerequisite check script to verify and install system dependencies::
-
-    cd contrib/devstack-ironic-neutron-ml2
-    sudo bash 01-prereqs.sh
-
-This script:
-
-* Verifies nested virtualization support
-* Installs required system packages (libvirt, qemu, openvswitch, etc.)
-* Creates the ``stack`` user if it does not exist
-* Enables and starts required services
-* Verifies the Cisco Nexus 9000v image is in place
-
-Step 2: Generate local.conf
-----------------------------
-
-Switch to the stack user and generate the DevStack configuration::
-
-    sudo su - stack
-    cd /opt/stack
-    git clone https://opendev.org/openstack/devstack.git
-    # Copy the scripts to /opt/stack for convenience
-    cp -r <path-to-ironic>/contrib/devstack-ironic-neutron-ml2/*.sh .
-
-    bash 02-generate-local-conf.sh
-
-This generates ``devstack/local.conf`` configured for:
-
-* Ironic with Redfish (sushy-tools) as the deploy driver
-* Neutron with ML2 plugin and networking-generic-switch
-* Cisco Nexus 9000v as the network simulator
-* VLAN-based tenant networking
-* 3 virtual bare metal nodes
-* Swift for the direct deploy interface
-
-You can customize the generated configuration by setting environment variables
-before running the script. See the script header for available options.
-
-Step 3: Run DevStack
---------------------
+Step 1: Configure Terraform Variables
+--------------------------------------
 
 ::
 
-    cd /opt/stack/devstack
-    ./stack.sh
+    cd contrib/devstack-ironic-neutron-ml2/terraform
+    cp terraform.tfvars.example terraform.tfvars
+    # Edit terraform.tfvars with your cloud details
 
-This will take 20-40 minutes depending on your hardware and network speed.
-The Cisco Nexus 9000v simulator boot adds an additional 5-10 minutes on top
-of the normal DevStack deployment time.
+Step 2: Create Infrastructure
+-------------------------------
 
-.. warning::
-   The Cisco Nexus 9000v simulator is **slow** to boot (400-500 seconds for
-   initial startup). This is expected. DevStack will wait for it.
+::
 
-Step 4: Verify the Deployment
-------------------------------
+    terraform init
+    terraform plan
+    terraform apply
 
-After ``stack.sh`` completes, run the verification script::
+This creates:
 
-    bash 03-verify.sh
+* 1 management network (``ironic-mgmt``) with router and floating IP
+* 1 trunk network (``ironic-trunk``, port security off)
+* N bare metal networks (``ironic-bm-{0..N}``, port security off)
+* DevStack VM (Ubuntu 24.04)
+* Cisco Nexus 9000v VM (uploaded to Glance with UEFI properties)
+* N bare metal VMs
+* All ports with correct security and addressing
 
-This checks:
+Step 3: Configure the Cisco 9k Switch
+---------------------------------------
 
-* All DevStack services are running
-* Ironic nodes are enrolled and available
-* The Cisco Nexus 9000v switch is reachable via SSH
-* Neutron ML2 networking-generic-switch configuration is correct
-* sushy-tools Redfish emulator is responding
+The switch needs initial console-based setup (POAP skip, admin password,
+SSH enable) before SSH-based configuration can proceed.
 
-Step 5: Test a Deployment
+**Initial console setup** (one-time, manual):
+
+::
+
+    # Get serial console URL from the hosting cloud
+    openstack console url show --serial cisco-nexus9k
+
+    # Connect and wait ~5-10 minutes for "Abort Power On Auto Provisioning"
+    # Then run these commands:
+    #   skip
+    #   (wait for login prompt)
+    #   admin
+    #   (blank password)
+    #   configure
+    #   username admin password system_s3cret! role network-admin
+    #   int mgmt0
+    #   ip address 172.24.5.20/24
+    #   exit
+    #   feature ssh
+    #   feature lldp
+    #   exit
+    #   copy run start
+
+**SSH-based configuration** (automated):
+
+::
+
+    # From a machine that can reach 172.24.5.20 (e.g., the DevStack VM)
+    bash scripts/01-configure-switch.sh 172.24.5.20 "system_s3cret!" 3
+
+Step 4: Set Up DevStack
+------------------------
+
+SSH to the DevStack VM and run the setup script::
+
+    ssh ubuntu@$(terraform output -raw devstack_floating_ip)
+
+    # Set hosting cloud credentials for sushy-tools Nova driver
+    export HOSTING_CLOUD_AUTH_URL="https://your-cloud:5000/v3"
+    export HOSTING_CLOUD_PROJECT="your-project"
+    export HOSTING_CLOUD_USERNAME="your-user"
+    export HOSTING_CLOUD_PASSWORD="your-password"
+
+    bash scripts/02-setup-devstack.sh
+
+This script:
+
+1. Creates the ``stack`` user and clones DevStack
+2. Writes hosting cloud credentials to ``clouds.yaml`` (for sushy-tools)
+3. Generates ``local.conf`` with:
+
+   - Ironic in hardware mode (``IRONIC_IS_HARDWARE=True``) -- no local VMs
+   - Redfish driver (will be reconfigured for Nova driver post-stack)
+   - Neutron ML2 with networking-generic-switch
+   - VLAN tenant networking (range 100:150)
+
+4. Runs ``stack.sh``
+5. Post-stack: reconfigures sushy-tools for the Nova driver, configures
+   NGS with the Cisco 9k switch details, bridges the trunk interface
+   to OVS ``brbm``
+
+Step 5: Enroll Bare Metal Nodes
+--------------------------------
+
+Export node information from Terraform and enroll in Ironic::
+
+    # On your local machine (where terraform runs)
+    terraform output -json baremetal_nodes > /tmp/nodes.json
+    scp /tmp/nodes.json ubuntu@$(terraform output -raw devstack_floating_ip):/tmp/
+
+    # On the DevStack VM
+    bash scripts/03-enroll-nodes.sh /tmp/nodes.json
+
+This creates Ironic nodes with:
+
+* Redfish BMC URL pointing at local sushy-tools
+* System ID = Nova instance UUID (sushy-tools Nova driver maps these)
+* Port with ``local_link_connection`` pointing at the correct switch port
+* ``network_interface=neutron`` for ML2 integration
+
+Step 6: Verify
+---------------
+
+::
+
+    bash scripts/04-verify.sh
+
+Step 7: Test a Deployment
 --------------------------
 
-Source credentials and deploy a test instance::
+::
 
     export OS_CLOUD=devstack-admin-demo
 
-    # Get network and image
     net_id=$(openstack network list | awk '/private/ {print $2}')
     image=$(openstack image list | grep -- '-disk' | awk '{ print $2 }')
 
-    # Create keypair
     ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa 2>/dev/null || true
     openstack keypair create --public-key ~/.ssh/id_rsa.pub default 2>/dev/null || true
 
-    # Boot instance
     openstack server create --flavor baremetal --nic net-id=$net_id \
         --image $image --key-name default testing
 
-    # Watch progress
     watch openstack server list --long
 
 Maintenance
 ===========
 
-Restarting DevStack Services
-----------------------------
+::
 
-If you need to restart services after a reboot or crash::
+    # Check status of all components
+    bash scripts/05-maintenance.sh status
 
-    bash 04-maintenance.sh restart
+    # Restart all DevStack services
+    bash scripts/05-maintenance.sh restart
 
-Tearing Down
--------------
+    # Re-bridge trunk interface after a VM reboot
+    bash scripts/05-maintenance.sh reconnect
 
-To completely tear down the DevStack environment::
+    # Undeploy all instances and reset nodes
+    bash scripts/05-maintenance.sh redeploy
 
-    cd /opt/stack/devstack
-    ./unstack.sh
+    # Tail logs
+    bash scripts/05-maintenance.sh logs
 
-To also clean up all created resources::
+Tear Down
+---------
 
-    cd /opt/stack/devstack
-    ./clean.sh
-    bash 04-maintenance.sh cleanup
+::
 
-Re-stacking
-------------
+    # On the DevStack VM
+    cd /opt/stack/devstack && ./unstack.sh
 
-After ``unstack.sh`` or ``clean.sh``, you can re-run ``./stack.sh`` to
-rebuild the environment. The Cisco Nexus 9000v image will be re-copied from
-the original, ensuring a clean switch state.
-
-Using a Different Ironic Branch
--------------------------------
-
-To test changes from a Gerrit review or a different branch, modify the
-``enable_plugin`` line in ``local.conf``::
-
-    # For a Gerrit review:
-    enable_plugin ironic https://opendev.org/openstack/ironic refs/changes/XX/XXXXXX/Y
-
-    # For a specific branch:
-    enable_plugin ironic https://opendev.org/openstack/ironic stable/2024.2
-
-If you're developing locally, you can point the plugin at your local checkout::
-
-    enable_plugin ironic /path/to/your/ironic
+    # On your local machine
+    cd terraform && terraform destroy
 
 Troubleshooting
 ===============
 
-Nested Virtualization Not Available
-------------------------------------
+sushy-tools Not Discovering Bare Metal VMs
+-------------------------------------------
 
-If running in a cloud VM, ensure your cloud provider supports nested
-virtualization and that it's enabled for your instance. On OpenStack, you may
-need a flavor with the ``hw:cpu_policy=dedicated`` property and the host must
-have nested virt enabled.
+* Verify hosting cloud credentials: ``openstack --os-cloud hosting-cloud server list``
+* Check sushy-tools config: ``cat /etc/ironic/redfish/emulator.conf``
+* Check sushy-tools logs: ``journalctl -u devstack@redfish-emulator``
+* Verify clouds.yaml is readable: ``cat /etc/openstack/clouds.yaml``
 
-Alternatively, you can set ``IRONIC_VM_ENGINE=qemu`` in ``local.conf`` to use
-full software emulation, but this will be significantly slower.
+.. note::
+   sushy-tools with the Nova driver lists ALL instances in the configured
+   cloud/project as Redfish Systems. The DevStack VM and Cisco 9k VM will
+   also appear. This is harmless -- Ironic only manages explicitly enrolled
+   nodes.
 
-Cisco Nexus 9000v Fails to Boot
----------------------------------
+VLAN Traffic Not Flowing Through the Switch
+---------------------------------------------
 
-* Ensure ``/opt/stack/nexus9300v64.10.3.7.M.qcow2`` exists and is a valid
-  QCOW2 image
-* Ensure KVM is available (``ls /dev/kvm``)
-* Check the simulator console: ``telnet localhost 55001``
-* Review the service log: ``journalctl -u devstack@ir-sw-sim``
+* Verify trunk interface is bridged: ``sudo ovs-vsctl list-ports brbm``
+* Check switch trunk port: ``ssh admin@172.24.5.20 "show int trunk"``
+* Verify port security is disabled on hosting cloud networks
+* Check OVS flows: ``sudo ovs-ofctl dump-flows brbm``
 
-Switch Not Reachable via SSH
------------------------------
+Switch Console Access
+----------------------
 
-* The switch takes 400-500 seconds to fully boot
-* Verify the management interface: ``ping 172.24.5.20``
-* Try connecting via the serial console: ``telnet localhost 55001``
-* Default credentials: ``admin`` / ``system_s3cret!``
+If the hosting cloud has serial console proxy (nova-serialproxy)::
 
-sushy-tools Not Responding
+    openstack console url show --serial cisco-nexus9k
+
+If only VNC is available::
+
+    openstack console url show cisco-nexus9k
+
+Default switch credentials: ``admin`` / ``system_s3cret!``
+
+Bare Metal Node Won't Boot
 ---------------------------
 
-* Check the service: ``systemctl status devstack@redfish-emulator``
-* Verify it's listening: ``curl http://localhost:9132/redfish/v1/``
-* Check logs: ``journalctl -u devstack@redfish-emulator``
-
-Node Stuck in "wait call-back"
--------------------------------
-
-* Check IPA ramdisk logs in ``$IRONIC_VM_LOG_DIR``
-* Ensure the provisioning network has DHCP: ``openstack subnet list``
+* Check Ironic node state: ``openstack baremetal node show <uuid>``
+* Check sushy-tools can control it:
+  ``curl http://localhost:9132/redfish/v1/Systems/<nova-uuid>``
+* Verify the correct Nova instance UUID is used as the Redfish system ID
 * Check Ironic conductor logs: ``journalctl -u devstack@ir-cond``
-* Verify the node's BMC is accessible::
 
-    curl http://localhost:9132/redfish/v1/Systems/
-
-ML2 Plugin Not Configuring Switch Ports
-----------------------------------------
-
-* Check Neutron server logs: ``journalctl -u devstack@neutron-api``
-* Verify NGS configuration::
-
-    grep -A5 'genericswitch' /etc/neutron/plugins/ml2/ml2_conf.ini
-
-* Ensure the switch is reachable from the Neutron server host
-* Check that the port's ``local_link_connection`` info matches the switch config
-
-Key Configuration Files
-========================
-
-After deployment, these are the important configuration files:
-
-* ``/etc/ironic/ironic.conf`` -- Ironic configuration
-* ``/etc/neutron/plugins/ml2/ml2_conf.ini`` -- Neutron ML2 plugin config
-* ``/etc/neutron/plugins/ml2/ml2_conf_genericswitch.ini`` -- NGS switch config
-  (if separate)
-* ``$IRONIC_CONF_DIR/redfish/emulator.conf`` -- sushy-tools configuration
-* ``/etc/openstack/clouds.yaml`` -- OpenStack client credentials
-
-Useful Commands
-================
+File Reference
+==============
 
 ::
 
-    # Ironic node management
-    export OS_CLOUD=devstack-system-admin
-    openstack baremetal node list
-    openstack baremetal node show <node-uuid>
-    openstack baremetal port list --node <node-uuid>
-
-    # Check sushy-tools
-    curl http://localhost:9132/redfish/v1/Systems/
-
-    # Connect to Cisco switch console
-    telnet localhost 55001
-
-    # SSH to Cisco switch (after boot)
-    ssh admin@172.24.5.20
-
-    # Check libvirt VMs
-    sudo virsh list --all
-
-    # Neutron network inspection
-    export OS_CLOUD=devstack-admin
-    openstack network list
-    openstack port list
-    openstack port show <port-id> -c binding_profile
-
-Scripts Reference
-==================
-
-``01-prereqs.sh``
-    Checks and installs system prerequisites. Run with sudo on a fresh host.
-
-``02-generate-local-conf.sh``
-    Generates a ``devstack/local.conf`` tailored for the Ironic + Neutron ML2
-    + Cisco Nexus 9000v setup. Customizable via environment variables.
-
-``03-verify.sh``
-    Post-deployment verification. Checks all services, connectivity, and
-    configuration.
-
-``04-maintenance.sh``
-    Lifecycle management: restart services, cleanup resources, check status.
+    contrib/devstack-ironic-neutron-ml2/
+    +-- README.rst                  This guide
+    +-- terraform/
+    |   +-- main.tf                 Provider and data sources
+    |   +-- variables.tf            Input variables
+    |   +-- network.tf              Networks, subnets, ports, security groups
+    |   +-- compute.tf              VM instances and Glance image
+    |   +-- outputs.tf              Terraform outputs (IPs, UUIDs, MACs)
+    |   +-- terraform.tfvars.example
+    +-- scripts/
+        +-- 01-configure-switch.sh  Configure Cisco 9k via SSH
+        +-- 02-setup-devstack.sh    Full DevStack setup on the VM
+        +-- 03-enroll-nodes.sh      Enroll bare metal VMs in Ironic
+        +-- 04-verify.sh            Post-deployment verification
+        +-- 05-maintenance.sh       Lifecycle management
