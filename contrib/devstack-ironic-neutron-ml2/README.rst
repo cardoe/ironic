@@ -175,13 +175,11 @@ If your cloud also blocks disabling port security on the trunk network,
 run the Cisco 9k locally on the DevStack host -- the trunk becomes a
 local OVS bridge and never touches the hosting cloud's network.
 
-**Strategy C -- Full VXLAN overlay (last resort):**
-
-If the cloud blocks both port security disable AND ``allowed_address_pairs``,
-build a VXLAN overlay. All VMs go on a single standard network. VXLAN
-tunnels (UDP port 4789) carry bare metal L2 traffic inside regular IP
-packets that pass port security. The Cisco 9k must run locally. See
-the `Known Limitations and TODOs`_ section for details.
+**Note on overlays:** The bare metal VMs see a regular network interface
+(``eth0``). They have no knowledge of the underlying Geneve overlay --
+the hosting cloud handles encapsulation transparently below the VM.
+``allowed_address_pairs`` is sufficient because the per-node links carry
+untagged traffic. No additional overlay (VXLAN-inside-Geneve) is needed.
 
 Flavor Sizing
 -------------
@@ -462,21 +460,15 @@ Known Limitations and TODOs
   the Terraform ``local_file_path`` upload fails, upload the image
   manually via ``openstack image create`` with ``--file``.
 
-* **VXLAN overlay (Strategy C) is not yet automated.** If your cloud
-  blocks both ``port_security_enabled=false`` and ``allowed_address_pairs``,
-  you would need a VXLAN overlay where all VMs sit on a single standard
-  network and VXLAN tunnels carry the bare metal L2 traffic inside
-  regular UDP packets. This requires:
-
-  * Running the Cisco 9k locally on the DevStack host
-  * Creating VXLAN tunnel endpoints on the DevStack host (one VNI per
-    bare metal node, bridged to the Cisco 9k's tap interfaces)
-  * Setting up matching VXLAN endpoints inside each bare metal VM
-  * The chicken-and-egg problem: when sushy-tools rebuilds a bare metal
-    VM (for virtual media boot), the VXLAN config inside it is wiped.
-    A custom IPA ramdisk with VXLAN setup logic would be needed.
-
-  This approach works but is not yet implemented in the scripts.
+* **Port security: overlay is transparent to BM nodes.** The bare metal
+  VMs see a regular network interface (``eth0``). They have no knowledge
+  of the underlying Geneve overlay -- the hosting cloud's OVS handles all
+  encapsulation/decapsulation on the compute nodes, below the VM. This is
+  the standard Neutron model. With ``allowed_address_pairs`` set to
+  ``0.0.0.0/0``, DevStack-assigned IPs pass through without the BM node
+  needing any special configuration. Strategy C (building a separate VXLAN
+  overlay) should not be necessary on any cloud that supports
+  ``allowed_address_pairs``.
 
 File Reference
 ==============
