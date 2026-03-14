@@ -93,12 +93,42 @@ Hosting Cloud Requirements
 --------------------------
 
 * Geneve (or VXLAN) tenant networks with the ability to create many
-* Ability to disable port security on networks/ports
-* UEFI boot support for Nova instances (OVMF firmware) -- needed for
-  the Cisco 9k simulator
+* **Ability to disable port security** on networks and/or ports. This is a
+  hard requirement -- VLAN-tagged frames must pass between the switch trunk
+  and DevStack. Verify with:
+  ``openstack network create --disable-port-security test && openstack network delete test``
+  Some public clouds (e.g., OVH public cloud) may restrict this. Check your
+  cloud's documentation or contact support.
+* **UEFI boot support** for Nova instances (OVMF firmware) -- needed for
+  the Cisco 9k simulator. Verify that your cloud supports the
+  ``hw_firmware_type=uefi`` image property.
+* **Serial console or VNC access** for initial Cisco 9k switch setup
+  (POAP skip). Serial console (nova-serialproxy) is preferred.
 * Sufficient quota: ~5 instances, ~6 networks, ~15 ports, 1 floating IP
 * An Ubuntu 24.04 image in Glance
 * Appropriate flavors (see below)
+
+Verify Hosting Cloud Compatibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Run these checks before starting::
+
+    # Port security can be disabled
+    openstack network create --disable-port-security test-portsec
+    openstack network delete test-portsec
+
+    # UEFI images are supported (upload a small test)
+    openstack image create --disk-format qcow2 --container-format bare \
+        --property hw_firmware_type=uefi --property hw_machine_type=q35 \
+        --file /dev/null test-uefi
+    openstack image delete test-uefi
+
+    # Check quotas
+    openstack quota show
+
+    # Check serial console availability
+    # (create a small test instance first, then:)
+    openstack console url show --serial <test-instance>
 
 Flavor Sizing
 -------------
@@ -341,6 +371,40 @@ Bare Metal Node Won't Boot
   ``curl http://localhost:9132/redfish/v1/Systems/<nova-uuid>``
 * Verify the correct Nova instance UUID is used as the Redfish system ID
 * Check Ironic conductor logs: ``journalctl -u devstack@ir-cond``
+
+Known Limitations and TODOs
+===========================
+
+* **NIC ordering on the Cisco 9k.** Nova does not guarantee that the
+  order of port attachments maps to the order of PCI slots inside the
+  VM. Some clouds use different PCI slot assignment strategies. If the
+  Cisco 9k interfaces don't map correctly (mgmt0, Ethernet1/1, ...),
+  you may need to check the instance's XML or use PCI passthrough hints.
+
+* **Trunk interface detection.** The ``02-setup-devstack.sh`` script
+  auto-detects the trunk interface as the "second NIC" by alphabetical
+  name sort. Cloud-init may rename interfaces unpredictably. Set the
+  ``TRUNK_INTERFACE`` environment variable explicitly if detection fails.
+
+* **sushy-tools Nova driver maturity.** The Nova driver for sushy-tools
+  must support virtual media operations (typically via Nova rebuild).
+  Verify that the version of sushy-tools installed by DevStack includes
+  the Nova driver and supports the operations Ironic needs.
+
+* **sushy-tools sees all instances.** The Nova driver lists ALL Nova
+  instances in the configured project as Redfish Systems -- including
+  the DevStack VM and Cisco 9k VM. This is harmless (Ironic only manages
+  enrolled nodes) but may be confusing during debugging.
+
+* **bridge_mappings configuration.** The DevStack ``local.conf`` sets
+  ``OVS_PHYSICAL_BRIDGE=brbm`` and ``PHYSICAL_NETWORK=mynetwork``. Verify
+  that DevStack correctly generates ``bridge_mappings = mynetwork:brbm``
+  in the ML2 OVS agent config. If not, add it manually post-stack.
+
+* **Large image uploads.** The Cisco 9k QCOW2 is 1-2 GB. Some clouds
+  limit Glance image upload size or require importing from a URL. If
+  the Terraform ``local_file_path`` upload fails, upload the image
+  manually via ``openstack image create`` with ``--file``.
 
 File Reference
 ==============
