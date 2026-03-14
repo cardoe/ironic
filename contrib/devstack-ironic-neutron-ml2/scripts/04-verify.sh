@@ -18,7 +18,9 @@ info() { echo -e "      $1"; }
 ERRORS=0
 WARNINGS=0
 
-SWITCH_IP="${SWITCH_IP:-192.168.100.20}"
+SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
+DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 echo "=============================================="
@@ -80,18 +82,10 @@ else
 fi
 echo ""
 
-# ---- Local Cisco 9k VM ----
-echo "--- Cisco Nexus 9000v (local VM) ---"
-if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
-    pass "Cisco 9k VM running (PID $(cat /tmp/cisco9k.pid))"
-else
-    fail "Cisco 9k VM not running"
-    info "Check: ls /tmp/cisco9k.pid; telnet 127.0.0.1 4000"
-    ERRORS=$((ERRORS + 1))
-fi
-
+# ---- Switch connectivity ----
+echo "--- Cisco 9k Switch ---"
 if ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null; then
-    pass "Switch reachable at $SWITCH_IP (local bridge)"
+    pass "Switch reachable at $SWITCH_IP (mgmt)"
 else
     fail "Switch not reachable at $SWITCH_IP"
     ERRORS=$((ERRORS + 1))
@@ -105,34 +99,44 @@ else
 fi
 echo ""
 
+# ---- VXLAN underlay ----
+echo "--- VXLAN Underlay ---"
+if ping -c 1 -W 2 "$SWITCH_VTEP_IP" &>/dev/null; then
+    pass "Switch VTEP reachable at $SWITCH_VTEP_IP"
+else
+    warn "Switch VTEP $SWITCH_VTEP_IP not reachable (check NX-OS loopback0 and ARP)"
+    info "If this fails, set SWITCH_UNDERLAY_MAC and re-run 02-setup-devstack.sh"
+    info "to add a static ARP entry for the VTEP IP."
+    WARNINGS=$((WARNINGS + 1))
+fi
+echo ""
+
 # ---- OVS Bridge ----
 echo "--- OVS Configuration ---"
 if sudo ovs-vsctl br-exists brbm 2>/dev/null; then
     pass "OVS bridge 'brbm' exists"
-    brbm_ports=$(sudo ovs-vsctl list-ports brbm 2>/dev/null)
-    if echo "$brbm_ports" | grep -q "tap-sw-trunk"; then
-        pass "Trunk tap (tap-sw-trunk) connected to brbm"
+    vxlan_count=$(sudo ovs-vsctl list-ports brbm 2>/dev/null | grep -c "^vxlan_" || echo "0")
+    if [[ "$vxlan_count" -gt 0 ]]; then
+        pass "$vxlan_count VXLAN tunnel port(s) on brbm"
+        # Check one VXLAN port for correct configuration
+        sample_port=$(sudo ovs-vsctl list-ports brbm | grep "^vxlan_" | head -1)
+        if [[ -n "$sample_port" ]]; then
+            remote=$(sudo ovs-vsctl get interface "$sample_port" options:remote_ip 2>/dev/null | tr -d '"')
+            if [[ "$remote" == "$SWITCH_VTEP_IP" ]]; then
+                pass "VXLAN remote_ip = $SWITCH_VTEP_IP"
+            else
+                warn "VXLAN remote_ip = $remote (expected $SWITCH_VTEP_IP)"
+                WARNINGS=$((WARNINGS + 1))
+            fi
+        fi
     else
-        warn "tap-sw-trunk not found on brbm - trunk may not be bridged"
-        WARNINGS=$((WARNINGS + 1))
+        fail "No VXLAN ports on brbm"
+        ERRORS=$((ERRORS + 1))
     fi
 else
     fail "OVS bridge 'brbm' not found"
     ERRORS=$((ERRORS + 1))
 fi
-echo ""
-
-# ---- Per-node bridges ----
-echo "--- Per-node Bridges ---"
-for br in $(ip -o link show type bridge | awk -F': ' '{print $2}' | grep '^br-bm-'); do
-    members=$(bridge link show master "$br" 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
-    if [[ -n "$members" ]]; then
-        pass "$br: $members"
-    else
-        warn "$br has no members"
-        WARNINGS=$((WARNINGS + 1))
-    fi
-done
 echo ""
 
 # ---- NGS Configuration ----

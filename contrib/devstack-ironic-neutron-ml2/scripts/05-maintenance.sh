@@ -8,12 +8,18 @@
 #   status    - Show status of all services and components
 #   restart   - Restart all DevStack services
 #   logs      - Tail key service logs (Ctrl+C to stop)
-#   reconnect - Re-bridge trunk tap and BM interfaces (after reboot)
+#   reconnect - Re-create VXLAN tunnel ports on brbm (after reboot)
 #   redeploy  - Undeploy all instances and reset nodes to available
 
 set -uo pipefail
 
-SWITCH_IP="${SWITCH_IP:-192.168.100.20}"
+SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
+DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
+UNDERLAY_PREFIX="${UNDERLAY_PREFIX:-24}"
+VLAN_START="${VLAN_START:-100}"
+VLAN_END="${VLAN_END:-150}"
+VNI_OFFSET=10000
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 GREEN='\033[0;32m'
@@ -59,24 +65,15 @@ cmd_status() {
     done
 
     echo ""
-    echo "--- Cisco 9k (local VM) ---"
-    if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
-        pass "Cisco 9k running (PID $(cat /tmp/cisco9k.pid))"
-    else
-        warn "Cisco 9k not running"
-    fi
-    ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null && pass "Switch at $SWITCH_IP" || warn "Switch unreachable"
+    echo "--- Switch connectivity ---"
+    ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null && pass "Switch mgmt at $SWITCH_IP" || warn "Switch mgmt unreachable"
+    ping -c 1 -W 2 "$SWITCH_VTEP_IP" &>/dev/null && pass "Switch VTEP at $SWITCH_VTEP_IP" || warn "Switch VTEP unreachable"
 
     echo ""
     echo "--- OVS brbm ports ---"
     sudo ovs-vsctl list-ports brbm 2>/dev/null || warn "brbm not found"
-
-    echo ""
-    echo "--- Per-node bridges ---"
-    for br in $(ip -o link show type bridge | awk -F': ' '{print $2}' | grep '^br-bm-'); do
-        members=$(bridge link show master "$br" 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
-        echo "  $br: ${members:-<no members>}"
-    done
+    vxlan_count=$(sudo ovs-vsctl list-ports brbm 2>/dev/null | grep -c "^vxlan_" || echo "0")
+    info "$vxlan_count VXLAN tunnel port(s)"
 
     echo ""
     echo "--- Redfish API ---"
@@ -104,38 +101,35 @@ cmd_logs() {
 }
 
 cmd_reconnect() {
-    # After a VM reboot, bridges and trunk tap may be lost.
-    # Re-create them.
+    # After a VM reboot, the underlay IP and VXLAN tunnel ports may be lost.
 
-    info "Re-creating trunk tap..."
-    sudo ip tuntap add dev tap-sw-trunk mode tap 2>/dev/null || true
-    sudo ip link set tap-sw-trunk up
-    sudo ovs-vsctl --may-exist add-port brbm tap-sw-trunk
-    pass "Trunk tap bridged to brbm"
-
-    info "Re-creating management bridge..."
-    sudo ip link add br-sw-mgmt type bridge 2>/dev/null || true
-    sudo ip addr add 192.168.100.1/24 dev br-sw-mgmt 2>/dev/null || true
-    sudo ip link set br-sw-mgmt up
-
-    info "Detecting and re-bridging BM interfaces..."
+    info "Detecting underlay interface..."
     local interfaces
     interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
         grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
+    local underlay_if
+    underlay_if=$(echo "$interfaces" | sed -n '2p')
 
-    local idx=0
-    while IFS= read -r iface; do
-        if [[ $idx -gt 0 ]]; then
-            local bm_idx=$((idx - 1))
-            local br_name="br-bm-${bm_idx}"
-            sudo ip link add "$br_name" type bridge 2>/dev/null || true
-            sudo ip link set "$iface" master "$br_name" 2>/dev/null || true
-            sudo ip link set "$iface" up
-            sudo ip link set "$br_name" up
-            pass "$br_name with $iface"
-        fi
-        idx=$((idx + 1))
-    done <<< "$interfaces"
+    if [[ -z "$underlay_if" ]]; then
+        fail "Cannot detect underlay interface"
+        return 1
+    fi
+
+    info "Underlay interface: $underlay_if"
+    sudo ip addr add "${DEVSTACK_UNDERLAY_IP}/${UNDERLAY_PREFIX}" dev "$underlay_if" 2>/dev/null || true
+    sudo ip link set "$underlay_if" up
+    pass "Underlay IP configured"
+
+    info "Re-creating VXLAN tunnel ports on brbm..."
+    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+        vni=$((vlan + VNI_OFFSET))
+        sudo ovs-vsctl --may-exist add-port brbm "vxlan_${vlan}" \
+            tag="${vlan}" \
+            -- set interface "vxlan_${vlan}" type=vxlan \
+            options:remote_ip="${SWITCH_VTEP_IP}" \
+            options:key="${vni}"
+    done
+    pass "VXLAN ports re-created on brbm"
 }
 
 cmd_redeploy() {

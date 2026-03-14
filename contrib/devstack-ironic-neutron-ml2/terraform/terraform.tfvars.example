@@ -6,7 +6,6 @@ cloud_name            = "mycloud"
 external_network_name = "external"
 
 # Path to the Cisco Nexus 9000v QCOW2 image on your local machine.
-# This will be SCP'd to the DevStack VM (not uploaded to Glance).
 # Download from https://software.cisco.com (search "Nexus 9000v").
 cisco_9k_image_path = "/path/to/nexus9300v64.10.3.7.M.qcow2"
 
@@ -14,8 +13,9 @@ cisco_9k_image_path = "/path/to/nexus9300v64.10.3.7.M.qcow2"
 devstack_image_name = "Ubuntu-24.04"
 
 # Flavors - adjust to match your hosting cloud's available flavors.
-# DevStack needs significant resources, plus overhead for nested Cisco 9k VM.
+# DevStack needs significant resources for running all OpenStack services.
 devstack_flavor  = "m1.xlarge"    # 8 vCPU, 32 GB RAM, 100 GB disk
+cisco_9k_flavor  = "m1.large"     # 2 vCPU, 8 GB RAM
 baremetal_flavor = "m1.medium"    # Size visible to Ironic as "hardware"
 
 # SSH key pair (must exist in the hosting cloud)
@@ -25,13 +25,20 @@ key_pair_name = "mykey"
 baremetal_node_count = 3
 
 # Network configuration (defaults are usually fine)
-# mgmt_subnet_cidr = "172.24.5.0/24"
-# devstack_mgmt_ip = "172.24.5.10"
-# dns_nameservers  = ["8.8.8.8", "8.8.4.4"]
+# mgmt_subnet_cidr     = "172.24.5.0/24"
+# switch_mgmt_ip       = "172.24.5.20"
+# devstack_mgmt_ip     = "172.24.5.10"
+# dns_nameservers      = ["8.8.8.8", "8.8.4.4"]
 
-# Local management IP for the Cisco 9k inside the DevStack VM.
-# This is the IP that NGS (networking-generic-switch) uses to SSH to the switch.
-# switch_local_mgmt_ip = "192.168.100.20"
+# Underlay network for VXLAN tunnels between DevStack and switch(es)
+# underlay_subnet_cidr = "10.0.99.0/24"
+# switch_underlay_ip   = "10.0.99.20"
+# switch_vtep_ip       = "10.0.99.120"
+# devstack_underlay_ip = "10.0.99.10"
+
+# VLAN range for tenant networks (must match DevStack local.conf)
+# vlan_range_start = 100
+# vlan_range_end   = 150
 
 # Switch admin password
 # switch_password = "system_s3cret!"

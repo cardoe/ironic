@@ -2,19 +2,14 @@
 # 02-setup-devstack.sh - Set up DevStack with Ironic + Neutron ML2 on the
 #                         DevStack VM, using sushy-tools Nova driver.
 #
-# The Cisco Nexus 9000v runs locally inside this VM (nested virtualization).
-# Each bare metal network NIC is bridged to the corresponding 9k access port.
-# The trunk between the 9k and OVS brbm is a local tap.
+# Trunk traffic between DevStack and the Cisco 9k flows over VXLAN tunnels
+# on the underlay network. OVS brbm gets per-VLAN VXLAN ports that map
+# VLANs to VNIs matching the switch's NVE configuration.
 #
 # Run this ON the DevStack VM as the stack user (or it will create one).
 #
 # Usage:
 #   bash scripts/02-setup-devstack.sh
-#
-# Prerequisites:
-#   - The Cisco 9k QCOW2 must be SCP'd to the VM (default: /tmp/nexus9300v.qcow2)
-#   - The hosting cloud must support nested virtualization (or the 9k must be
-#     able to run under QEMU TCG, which is very slow)
 
 set -euo pipefail
 
@@ -31,13 +26,25 @@ HOSTING_CLOUD_PASSWORD="${HOSTING_CLOUD_PASSWORD:?Set HOSTING_CLOUD_PASSWORD}"
 HOSTING_CLOUD_USER_DOMAIN="${HOSTING_CLOUD_USER_DOMAIN:-Default}"
 HOSTING_CLOUD_PROJECT_DOMAIN="${HOSTING_CLOUD_PROJECT_DOMAIN:-Default}"
 
-# Local Cisco 9k switch configuration
-SWITCH_IMAGE="${SWITCH_IMAGE:-/tmp/nexus9300v.qcow2}"
-SWITCH_LOCAL_IP="${SWITCH_LOCAL_IP:-192.168.100.20}"
-SWITCH_LOCAL_GW="${SWITCH_LOCAL_GW:-192.168.100.1}"
-SWITCH_LOCAL_CIDR="${SWITCH_LOCAL_CIDR:-192.168.100.0/24}"
+# Switch configuration
+SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
 SWITCH_USER="${SWITCH_USER:-admin}"
 SWITCH_PASS="${SWITCH_PASS:-system_s3cret!}"
+
+# VXLAN underlay configuration
+SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
+SWITCH_UNDERLAY_IP="${SWITCH_UNDERLAY_IP:-10.0.99.20}"
+SWITCH_UNDERLAY_MAC="${SWITCH_UNDERLAY_MAC:-}"  # Set if NX-OS doesn't ARP for VTEP IP
+DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
+UNDERLAY_PREFIX="${UNDERLAY_PREFIX:-24}"
+
+# VLAN/VNI range (must match switch config and DevStack local.conf)
+VLAN_START="${VLAN_START:-100}"
+VLAN_END="${VLAN_END:-150}"
+VNI_OFFSET=10000
+
+# Underlay interface name inside the DevStack VM (second NIC)
+UNDERLAY_INTERFACE="${UNDERLAY_INTERFACE:-}"
 
 # DevStack configuration
 ADMIN_PASS="${ADMIN_PASSWORD:-password}"
@@ -55,27 +62,22 @@ info() { echo "[INFO] $1"; }
 pass() { echo "[PASS] $1"; }
 fail() { echo "[FAIL] $1"; exit 1; }
 
-detect_bm_interfaces() {
-    # Detect bare metal network interfaces (all NICs after the first one).
-    # The first NIC is mgmt; the rest are BM links (one per node).
+detect_underlay_interface() {
+    # The underlay interface is the second NIC (index 1).
+    if [[ -n "$UNDERLAY_INTERFACE" ]]; then
+        return
+    fi
+
     local interfaces
     interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
         grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
 
-    # Skip the first (mgmt) interface
-    BM_INTERFACES=()
-    local idx=0
-    while IFS= read -r iface; do
-        if [[ $idx -gt 0 ]]; then
-            BM_INTERFACES+=("$iface")
-        fi
-        idx=$((idx + 1))
-    done <<< "$interfaces"
+    UNDERLAY_INTERFACE=$(echo "$interfaces" | sed -n '2p')
 
-    if [[ ${#BM_INTERFACES[@]} -eq 0 ]]; then
-        fail "No bare metal network interfaces detected. Expected N NICs after mgmt."
+    if [[ -z "$UNDERLAY_INTERFACE" ]]; then
+        fail "Cannot auto-detect underlay interface. Set UNDERLAY_INTERFACE manually."
     fi
-    info "Detected ${#BM_INTERFACES[@]} BM interface(s): ${BM_INTERFACES[*]}"
+    info "Auto-detected underlay interface: $UNDERLAY_INTERFACE"
 }
 
 # =============================================================================
@@ -84,22 +86,7 @@ detect_bm_interfaces() {
 
 info "Installing prerequisites..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq \
-    git python3 python3-pip sshpass net-tools \
-    qemu-kvm qemu-utils libvirt-daemon-system bridge-utils \
-    >/dev/null 2>&1
-
-# Verify nested virt or KVM is available
-if [[ -e /dev/kvm ]]; then
-    pass "KVM available (nested virtualization supported)"
-else
-    info "KVM not available -- Cisco 9k will run under QEMU TCG (slow)"
-fi
-
-# Verify the 9k image exists
-if [[ ! -f "$SWITCH_IMAGE" ]]; then
-    fail "Cisco 9k QCOW2 not found at $SWITCH_IMAGE. SCP it to the VM first."
-fi
+sudo apt-get install -y -qq git python3 python3-pip sshpass net-tools >/dev/null 2>&1
 
 # =============================================================================
 # Step 2: Stack user
@@ -151,93 +138,34 @@ CLOUDSEOF
 chmod 600 ~/.config/openstack/clouds.yaml
 
 # =============================================================================
-# Step 5: Detect bare metal interfaces and set up local bridges
+# Step 5: Configure underlay interface
 # =============================================================================
 
-detect_bm_interfaces
+detect_underlay_interface
 
-info "Creating local management bridge for Cisco 9k..."
-sudo ip link add br-sw-mgmt type bridge 2>/dev/null || true
-sudo ip addr add "${SWITCH_LOCAL_GW}/24" dev br-sw-mgmt 2>/dev/null || true
-sudo ip link set br-sw-mgmt up
+info "Configuring underlay interface $UNDERLAY_INTERFACE..."
+sudo ip addr add "${DEVSTACK_UNDERLAY_IP}/${UNDERLAY_PREFIX}" dev "$UNDERLAY_INTERFACE" 2>/dev/null || true
+sudo ip link set "$UNDERLAY_INTERFACE" up
 
-info "Creating per-node bridges (BM NIC <-> 9k access port)..."
-for i in $(seq 0 $((${#BM_INTERFACES[@]} - 1))); do
-    br_name="br-bm-${i}"
-    bm_if="${BM_INTERFACES[$i]}"
-
-    sudo ip link add "$br_name" type bridge 2>/dev/null || true
-    sudo ip link set "$bm_if" master "$br_name" 2>/dev/null || true
-    sudo ip link set "$bm_if" up
-    sudo ip link set "$br_name" up
-
-    pass "Bridge $br_name with $bm_if"
-done
-
-# =============================================================================
-# Step 6: Launch Cisco 9k locally (nested QEMU/KVM)
-# =============================================================================
-
-info "Preparing Cisco 9k disk image..."
-SWITCH_DISK="/var/lib/libvirt/images/nexus9300v.qcow2"
-sudo mkdir -p /var/lib/libvirt/images
-if [[ ! -f "$SWITCH_DISK" ]]; then
-    sudo cp "$SWITCH_IMAGE" "$SWITCH_DISK"
+# If the switch VTEP IP differs from its underlay IP, add a static ARP
+# entry so DevStack can reach it. NX-OS may or may not respond to ARP
+# for loopback0's IP on the physical interface.
+if [[ "$SWITCH_VTEP_IP" != "$SWITCH_UNDERLAY_IP" ]]; then
+    if [[ -n "$SWITCH_UNDERLAY_MAC" ]]; then
+        info "Adding static ARP for switch VTEP IP $SWITCH_VTEP_IP..."
+        sudo ip neigh replace "$SWITCH_VTEP_IP" lladdr "$SWITCH_UNDERLAY_MAC" \
+            dev "$UNDERLAY_INTERFACE" nud permanent
+        pass "Static ARP entry added for VTEP"
+    else
+        info "SWITCH_UNDERLAY_MAC not set. Assuming NX-OS will ARP for VTEP IP."
+        info "If VXLAN tunnels don't come up, set SWITCH_UNDERLAY_MAC and re-run."
+    fi
 fi
 
-# Build QEMU command with correct NIC ordering:
-#   NIC 0 = mgmt0 (br-sw-mgmt)
-#   NIC 1 = Ethernet1/1 (trunk -- connected to OVS brbm, set up post-stack)
-#   NIC 2..N = Ethernet1/2..N (access ports -- connected to br-bm-{0..N})
-
-QEMU_CMD="sudo qemu-system-x86_64 -name cisco-9k -daemonize"
-QEMU_CMD+=" -m 8192 -smp 2"
-QEMU_CMD+=" -drive file=${SWITCH_DISK},if=virtio,format=qcow2"
-QEMU_CMD+=" -bios /usr/share/OVMF/OVMF_CODE.fd"
-QEMU_CMD+=" -serial telnet:127.0.0.1:4000,server,nowait"
-QEMU_CMD+=" -monitor unix:/tmp/cisco9k-monitor.sock,server,nowait"
-QEMU_CMD+=" -pidfile /tmp/cisco9k.pid"
-
-# Enable KVM if available
-if [[ -e /dev/kvm ]]; then
-    QEMU_CMD+=" -enable-kvm -cpu host"
-fi
-
-# NIC 0: mgmt0 -> br-sw-mgmt
-QEMU_CMD+=" -netdev bridge,id=mgmt,br=br-sw-mgmt"
-QEMU_CMD+=" -device virtio-net-pci,netdev=mgmt,mac=52:54:00:9k:00:00"
-
-# NIC 1: Ethernet1/1 (trunk) -> tap device (added to brbm post-stack)
-# Create a persistent tap for the trunk
-sudo ip tuntap add dev tap-sw-trunk mode tap 2>/dev/null || true
-sudo ip link set tap-sw-trunk up
-QEMU_CMD+=" -netdev tap,id=trunk,ifname=tap-sw-trunk,script=no,downscript=no"
-QEMU_CMD+=" -device virtio-net-pci,netdev=trunk,mac=52:54:00:9k:01:00"
-
-# NIC 2+: Ethernet1/2+ (access ports) -> per-node bridges
-for i in $(seq 0 $((${#BM_INTERFACES[@]} - 1))); do
-    br_name="br-bm-${i}"
-    nic_idx=$((i + 2))
-    mac_suffix=$(printf "%02x" "$i")
-    QEMU_CMD+=" -netdev bridge,id=bm${i},br=${br_name}"
-    QEMU_CMD+=" -device virtio-net-pci,netdev=bm${i},mac=52:54:00:9k:${mac_suffix}:02"
-done
-
-# Check if 9k is already running
-if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
-    info "Cisco 9k already running (PID $(cat /tmp/cisco9k.pid))"
-else
-    info "Launching Cisco 9k VM (this takes 5-10 minutes to boot)..."
-    eval "$QEMU_CMD"
-    pass "Cisco 9k launched (serial console: telnet 127.0.0.1 4000)"
-fi
-
-info "The switch needs initial POAP setup via serial console."
-info "Run: telnet 127.0.0.1 4000"
-info "Then see scripts/01-configure-switch.sh for setup instructions."
+pass "Underlay interface configured: $UNDERLAY_INTERFACE = $DEVSTACK_UNDERLAY_IP/$UNDERLAY_PREFIX"
 
 # =============================================================================
-# Step 7: Generate local.conf
+# Step 6: Generate local.conf
 # =============================================================================
 
 info "Generating DevStack local.conf..."
@@ -250,8 +178,9 @@ cat > "$DEVSTACK_DIR/local.conf" <<CONFEOF
 # Architecture:
 #   - sushy-tools uses the Nova driver to manage bare metal VMs on the
 #     hosting OpenStack cloud
-#   - Cisco Nexus 9000v switch simulator runs locally (nested KVM)
-#   - DevStack's OVS connects to the local switch trunk port
+#   - Cisco Nexus 9000v switch (Nova instance) handles VLAN switching
+#   - Trunk traffic flows over VXLAN tunnels on the underlay network
+#   - OVS brbm gets per-VLAN VXLAN ports mapped to NVE VNIs on the switch
 # =============================================================================
 
 # ---- Ironic Plugin ----
@@ -297,7 +226,7 @@ Q_USE_SECGROUP=False
 Q_PLUGIN=ml2
 ENABLE_TENANT_VLANS=True
 Q_ML2_TENANT_NETWORK_TYPE=vlan
-TENANT_VLAN_RANGE=100:150
+TENANT_VLAN_RANGE=${VLAN_START}:${VLAN_END}
 
 # ---- Ironic Networking ----
 IRONIC_USE_LINK_LOCAL=True
@@ -343,7 +272,7 @@ CONFEOF
 pass "local.conf written to $DEVSTACK_DIR/local.conf"
 
 # =============================================================================
-# Step 8: Run stack.sh
+# Step 7: Run stack.sh
 # =============================================================================
 
 info "Running stack.sh (this will take 20-40 minutes)..."
@@ -353,17 +282,36 @@ cd "$DEVSTACK_DIR"
 pass "stack.sh completed"
 
 # =============================================================================
-# Step 9: Post-stack configuration
+# Step 8: Post-stack configuration
 # =============================================================================
 
 info "Applying post-stack configuration..."
 
-# 9a. Bridge the trunk tap to OVS brbm
-info "Adding trunk tap to OVS bridge brbm..."
-sudo ovs-vsctl --may-exist add-port brbm tap-sw-trunk
-pass "Trunk tap bridged to brbm"
+# 8a. Create VXLAN tunnel ports on OVS brbm
+#
+# Each VLAN gets a VXLAN port with:
+#   - tag=<vlan>: OVS treats it as an access port in that VLAN
+#   - key=<vni>: VXLAN encapsulation uses this VNI
+#   - remote_ip=<switch_vtep>: tunnel endpoint on the Cisco 9k
+#
+# Traffic flow:
+#   Neutron sends VLAN-tagged frame on brbm -> OVS matches VLAN tag to
+#   access port -> strips VLAN, encapsulates in VXLAN with VNI -> sends UDP
+#   to switch VTEP -> NX-OS decapsulates, maps VNI to VLAN -> switches to
+#   access port -> BM node receives untagged frame.
 
-# 9b. Reconfigure sushy-tools for the Nova driver
+info "Creating VXLAN tunnel ports on brbm (VLAN ${VLAN_START}-${VLAN_END})..."
+for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+    vni=$((vlan + VNI_OFFSET))
+    sudo ovs-vsctl --may-exist add-port brbm "vxlan_${vlan}" \
+        tag="${vlan}" \
+        -- set interface "vxlan_${vlan}" type=vxlan \
+        options:remote_ip="${SWITCH_VTEP_IP}" \
+        options:key="${vni}"
+done
+pass "VXLAN ports created on brbm ($(( VLAN_END - VLAN_START + 1 )) tunnels to ${SWITCH_VTEP_IP})"
+
+# 8b. Reconfigure sushy-tools for the Nova driver
 REDFISH_CONF="/etc/ironic/redfish/emulator.conf"
 if [[ -f "$REDFISH_CONF" ]]; then
     info "Reconfiguring sushy-tools for Nova driver..."
@@ -395,17 +343,17 @@ else
     fail "sushy-tools config not found at $REDFISH_CONF"
 fi
 
-# 9c. Configure networking-generic-switch for the Cisco 9k
+# 8c. Configure networking-generic-switch for the Cisco 9k
 info "Configuring networking-generic-switch..."
 NGS_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
 
-# Add the switch configuration (uses local management IP)
+# Add the switch configuration
 if ! sudo grep -q "genericswitch:cisco_nexus9k" "$NGS_CONF" 2>/dev/null; then
     sudo tee -a "$NGS_CONF" >/dev/null <<NGSEOF
 
 [genericswitch:cisco_nexus9k]
 device_type = netmiko_cisco_nxos
-ip = ${SWITCH_LOCAL_IP}
+ip = ${SWITCH_IP}
 username = ${SWITCH_USER}
 password = ${SWITCH_PASS}
 ngs_port_default_vlan = 1
@@ -430,9 +378,11 @@ echo "=============================================="
 pass "DevStack setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. If not done already, configure the Cisco 9k switch:"
-echo "     telnet 127.0.0.1 4000   (serial console for POAP skip)"
-echo "     bash scripts/01-configure-switch.sh ${SWITCH_LOCAL_IP} '${SWITCH_PASS}' ${NODE_COUNT}"
-echo "  2. Enroll bare metal nodes: bash scripts/03-enroll-nodes.sh"
-echo "  3. Verify the deployment:   bash scripts/04-verify.sh"
+echo "  1. Enroll bare metal nodes: bash scripts/03-enroll-nodes.sh"
+echo "  2. Verify the deployment:   bash scripts/04-verify.sh"
+echo ""
+echo "VXLAN tunnel details:"
+echo "  DevStack underlay: $DEVSTACK_UNDERLAY_IP ($(sudo ovs-vsctl list-ports brbm | grep -c vxlan_) VXLAN ports on brbm)"
+echo "  Switch VTEP:       $SWITCH_VTEP_IP"
+echo "  VNI range:         $((VLAN_START + VNI_OFFSET))-$((VLAN_END + VNI_OFFSET))"
 echo "=============================================="
