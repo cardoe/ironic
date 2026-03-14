@@ -93,12 +93,12 @@ Hosting Cloud Requirements
 --------------------------
 
 * Geneve (or VXLAN) tenant networks with the ability to create many
-* **Ability to disable port security** on networks and/or ports. This is a
-  hard requirement -- VLAN-tagged frames must pass between the switch trunk
-  and DevStack. Verify with:
-  ``openstack network create --disable-port-security test && openstack network delete test``
-  Some public clouds (e.g., OVH public cloud) may restrict this. Check your
-  cloud's documentation or contact support.
+* **Port security flexibility** -- one of the following (see
+  `Port Security Strategies`_ below):
+
+  * **Best:** ability to disable port security on networks/ports, OR
+  * **Fallback:** ability to set ``allowed_address_pairs`` with
+    ``ip_address=0.0.0.0/0`` on ports (most clouds allow this)
 * **UEFI boot support** for Nova instances (OVMF firmware) -- needed for
   the Cisco 9k simulator. Verify that your cloud supports the
   ``hw_firmware_type=uefi`` image property.
@@ -113,9 +113,18 @@ Verify Hosting Cloud Compatibility
 
 Run these checks before starting::
 
-    # Port security can be disabled
+    # Test 1: Can port security be disabled at the network level?
     openstack network create --disable-port-security test-portsec
     openstack network delete test-portsec
+    # If this works: use default settings (use_allowed_address_pairs = false)
+
+    # Test 2: If Test 1 fails, can allowed_address_pairs be set?
+    openstack network create test-aap
+    openstack port create --network test-aap \
+        --allowed-address ip-address=0.0.0.0/0 test-aap-port
+    openstack port delete test-aap-port
+    openstack network delete test-aap
+    # If this works: set use_allowed_address_pairs = true in terraform.tfvars
 
     # UEFI images are supported (upload a small test)
     openstack image create --disk-format qcow2 --container-format bare \
@@ -129,6 +138,50 @@ Run these checks before starting::
     # Check serial console availability
     # (create a small test instance first, then:)
     openstack console url show --serial <test-instance>
+
+.. _Port Security Strategies:
+
+Port Security Strategies
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There are two separate port security concerns:
+
+1. **Per-node bare metal links** (untagged traffic): Bare metal VMs get
+   IPs from DevStack's Neutron, not the hosting cloud. The hosting cloud's
+   anti-spoofing rules would drop frames with these "unexpected" source IPs.
+
+2. **Trunk link** (VLAN-tagged traffic): The trunk between the Cisco 9k and
+   DevStack carries 802.1Q-tagged frames. Port security drops these
+   regardless of IP/MAC whitelisting.
+
+**Strategy A -- Disable port security (default):**
+
+Set ``use_allowed_address_pairs = false`` (default). Both networks and
+ports are created with ``port_security_enabled = false``. This is the
+simplest approach but requires the hosting cloud to allow it.
+
+**Strategy B -- allowed_address_pairs fallback:**
+
+Set ``use_allowed_address_pairs = true``. Per-node bare metal networks
+keep port security ON, but ports get ``allowed_address_pairs`` with
+``ip_address=0.0.0.0/0``, which permits any source IP from the port's
+MAC address. Most clouds allow this even when they block disabling port
+security entirely. This works for per-node links because the traffic is
+**untagged** (switch access ports strip VLAN tags).
+
+The trunk network still uses ``port_security_enabled = false`` because
+VLAN-tagged frames cannot be whitelisted via ``allowed_address_pairs``.
+If your cloud also blocks disabling port security on the trunk network,
+run the Cisco 9k locally on the DevStack host -- the trunk becomes a
+local OVS bridge and never touches the hosting cloud's network.
+
+**Strategy C -- Full VXLAN overlay (last resort):**
+
+If the cloud blocks both port security disable AND ``allowed_address_pairs``,
+build a VXLAN overlay. All VMs go on a single standard network. VXLAN
+tunnels (UDP port 4789) carry bare metal L2 traffic inside regular IP
+packets that pass port security. The Cisco 9k must run locally. See
+the `Known Limitations and TODOs`_ section for details.
 
 Flavor Sizing
 -------------
@@ -347,7 +400,10 @@ VLAN Traffic Not Flowing Through the Switch
 
 * Verify trunk interface is bridged: ``sudo ovs-vsctl list-ports brbm``
 * Check switch trunk port: ``ssh admin@172.24.5.20 "show int trunk"``
-* Verify port security is disabled on hosting cloud networks
+* Verify port security settings on hosting cloud networks/ports:
+  ``openstack port show <port-id> -c port_security_enabled -c allowed_address_pairs``
+* If using ``allowed_address_pairs``, verify they're set:
+  ``openstack port show <bm-port-id> -c allowed_address_pairs``
 * Check OVS flows: ``sudo ovs-ofctl dump-flows brbm``
 
 Switch Console Access
@@ -405,6 +461,22 @@ Known Limitations and TODOs
   limit Glance image upload size or require importing from a URL. If
   the Terraform ``local_file_path`` upload fails, upload the image
   manually via ``openstack image create`` with ``--file``.
+
+* **VXLAN overlay (Strategy C) is not yet automated.** If your cloud
+  blocks both ``port_security_enabled=false`` and ``allowed_address_pairs``,
+  you would need a VXLAN overlay where all VMs sit on a single standard
+  network and VXLAN tunnels carry the bare metal L2 traffic inside
+  regular UDP packets. This requires:
+
+  * Running the Cisco 9k locally on the DevStack host
+  * Creating VXLAN tunnel endpoints on the DevStack host (one VNI per
+    bare metal node, bridged to the Cisco 9k's tap interfaces)
+  * Setting up matching VXLAN endpoints inside each bare metal VM
+  * The chicken-and-egg problem: when sushy-tools rebuilds a bare metal
+    VM (for virtual media boot), the VXLAN config inside it is wiped.
+    A custom IPA ramdisk with VXLAN setup logic would be needed.
+
+  This approach works but is not yet implemented in the scripts.
 
 File Reference
 ==============

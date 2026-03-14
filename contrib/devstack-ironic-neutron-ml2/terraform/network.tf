@@ -53,6 +53,15 @@ resource "openstack_networking_router_interface_v2" "mgmt" {
 # Trunk Network (ironic-trunk)
 #   - No DHCP, port security disabled
 #   - Carries all VLANs between Cisco 9k trunk port and DevStack OVS
+#
+#   NOTE: The trunk carries VLAN-tagged frames, which REQUIRES port security
+#   disabled at the network level. allowed_address_pairs alone won't help
+#   because 802.1Q tags are stripped/dropped by OVS anti-spoofing rules
+#   regardless of IP/MAC whitelisting.
+#
+#   If your cloud does not allow port_security_enabled=false, run the Cisco 9k
+#   locally on the DevStack host instead -- the trunk becomes a local bridge
+#   and never touches the hosting cloud's network.
 # =============================================================================
 
 resource "openstack_networking_network_v2" "trunk" {
@@ -72,15 +81,21 @@ resource "openstack_networking_subnet_v2" "trunk" {
 
 # =============================================================================
 # Per-node Bare Metal Networks (ironic-bm-{N})
-#   - No DHCP, port security disabled
+#   - No DHCP
+#   - Port security handling depends on var.use_allowed_address_pairs:
+#     * false (default): port_security_enabled=false on the network
+#     * true: port security stays on, ports get allowed_address_pairs 0.0.0.0/0
 #   - Each is a point-to-point L2 link between a bare metal VM and a switch port
+#   - Traffic is UNTAGGED (switch access ports strip VLAN tags), so
+#     allowed_address_pairs is sufficient -- only source IP anti-spoofing
+#     needs to be bypassed, not 802.1Q tag filtering
 # =============================================================================
 
 resource "openstack_networking_network_v2" "bm" {
   count                 = var.baremetal_node_count
   name                  = "ironic-bm-${count.index}"
   admin_state_up        = true
-  port_security_enabled = false
+  port_security_enabled = var.use_allowed_address_pairs ? true : false
 }
 
 resource "openstack_networking_subnet_v2" "bm" {
@@ -153,10 +168,20 @@ resource "openstack_networking_port_v2" "switch_bm" {
   name               = "cisco9k-bm-${count.index}"
   network_id         = openstack_networking_network_v2.bm[count.index].id
   admin_state_up     = true
-  port_security_enabled = false
+  port_security_enabled = var.use_allowed_address_pairs ? true : false
 
   fixed_ip {
     subnet_id = openstack_networking_subnet_v2.bm[count.index].id
+  }
+
+  # When port security is on, allow any IP from this port's MAC.
+  # This permits bare metal traffic with IPs assigned by DevStack's Neutron
+  # (not the hosting cloud) to pass through.
+  dynamic "allowed_address_pairs" {
+    for_each = var.use_allowed_address_pairs ? [1] : []
+    content {
+      ip_address = "0.0.0.0/0"
+    }
   }
 }
 
@@ -169,10 +194,21 @@ resource "openstack_networking_port_v2" "bm_node" {
   name               = "bm-node-${count.index}"
   network_id         = openstack_networking_network_v2.bm[count.index].id
   admin_state_up     = true
-  port_security_enabled = false
+  port_security_enabled = var.use_allowed_address_pairs ? true : false
 
   fixed_ip {
     subnet_id = openstack_networking_subnet_v2.bm[count.index].id
+  }
+
+  # When port security is on, allow any IP from this port's MAC.
+  # Bare metal nodes get IPs from DevStack's Neutron via the switch, not from
+  # the hosting cloud. Without this, the hosting cloud's anti-spoofing rules
+  # would drop frames with those "unexpected" source IPs.
+  dynamic "allowed_address_pairs" {
+    for_each = var.use_allowed_address_pairs ? [1] : []
+    content {
+      ip_address = "0.0.0.0/0"
+    }
   }
 }
 

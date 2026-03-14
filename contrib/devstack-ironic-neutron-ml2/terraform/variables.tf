@@ -69,6 +69,22 @@ variable "devstack_mgmt_ip" {
   default     = "172.24.5.10"
 }
 
+variable "use_allowed_address_pairs" {
+  description = <<-EOT
+    Use allowed_address_pairs instead of disabling port security on networks.
+    Set to true if your hosting cloud does not allow port_security_enabled=false.
+    allowed_address_pairs with 0.0.0.0/0 permits any source IP from the port's
+    MAC, which is sufficient for bare metal per-node links (untagged traffic).
+
+    NOTE: The trunk network still needs port_security_enabled=false for VLAN-
+    tagged frames. If your cloud blocks that entirely, run the Cisco 9k locally
+    on the DevStack host instead (trunk becomes a local bridge, no hosting cloud
+    involvement).
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "switch_password" {
   description = "Admin password to configure on the Cisco 9k switch"
   type        = string

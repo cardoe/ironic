@@ -30,5 +30,16 @@ baremetal_node_count = 3
 # devstack_mgmt_ip = "172.24.5.10"
 # dns_nameservers  = ["8.8.8.8", "8.8.4.4"]
 
+# Port security strategy for bare metal networks.
+# Set to true if your hosting cloud does NOT allow port_security_enabled=false.
+# Uses allowed_address_pairs with 0.0.0.0/0 instead, which permits any source
+# IP from the port's MAC address. Most clouds allow this even when they block
+# disabling port security entirely.
+#
+# NOTE: The trunk network always needs port_security_enabled=false for
+# VLAN-tagged frames. If your cloud blocks that too, run the Cisco 9k locally
+# on the DevStack host (trunk stays local, never hits the hosting network).
+# use_allowed_address_pairs = true
+
 # Switch admin password
 # switch_password = "system_s3cret!"
