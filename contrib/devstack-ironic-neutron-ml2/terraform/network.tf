@@ -22,7 +22,7 @@ resource "openstack_networking_secgroup_rule_v2" "allow_all_ingress_v6" {
 # =============================================================================
 # Management Network (ironic-mgmt)
 #   - DHCP enabled, router to external for internet access
-#   - Connects: DevStack VM, Cisco 9k mgmt0, (optionally bare metal VMs)
+#   - Connects: DevStack VM, bare metal VMs (for BMC/Redfish via sushy-tools)
 # =============================================================================
 
 resource "openstack_networking_network_v2" "mgmt" {
@@ -50,52 +50,19 @@ resource "openstack_networking_router_interface_v2" "mgmt" {
 }
 
 # =============================================================================
-# Trunk Network (ironic-trunk)
-#   - No DHCP, port security disabled
-#   - Carries all VLANs between Cisco 9k trunk port and DevStack OVS
-#
-#   NOTE: The trunk carries VLAN-tagged frames, which REQUIRES port security
-#   disabled at the network level. allowed_address_pairs alone won't help
-#   because 802.1Q tags are stripped/dropped by OVS anti-spoofing rules
-#   regardless of IP/MAC whitelisting.
-#
-#   If your cloud does not allow port_security_enabled=false, run the Cisco 9k
-#   locally on the DevStack host instead -- the trunk becomes a local bridge
-#   and never touches the hosting cloud's network.
-# =============================================================================
-
-resource "openstack_networking_network_v2" "trunk" {
-  name                  = "ironic-trunk"
-  admin_state_up        = true
-  port_security_enabled = false
-}
-
-resource "openstack_networking_subnet_v2" "trunk" {
-  name        = "ironic-trunk-subnet"
-  network_id  = openstack_networking_network_v2.trunk.id
-  cidr        = "10.0.99.0/24"
-  ip_version  = 4
-  no_gateway  = true
-  enable_dhcp = false
-}
-
-# =============================================================================
 # Per-node Bare Metal Networks (ironic-bm-{N})
-#   - No DHCP
-#   - Port security handling depends on var.use_allowed_address_pairs:
-#     * false (default): port_security_enabled=false on the network
-#     * true: port security stays on, ports get allowed_address_pairs 0.0.0.0/0
-#   - Each is a point-to-point L2 link between a bare metal VM and a switch port
+#   - No DHCP (bare metal DHCP comes from DevStack's Neutron via the switch)
+#   - Port security ON with allowed_address_pairs (0.0.0.0/0)
+#   - Each is a point-to-point L2 link between a bare metal VM and the
+#     DevStack VM (which bridges it to the local Cisco 9k's access port)
 #   - Traffic is UNTAGGED (switch access ports strip VLAN tags), so
-#     allowed_address_pairs is sufficient -- only source IP anti-spoofing
-#     needs to be bypassed, not 802.1Q tag filtering
+#     allowed_address_pairs is sufficient
 # =============================================================================
 
 resource "openstack_networking_network_v2" "bm" {
-  count                 = var.baremetal_node_count
-  name                  = "ironic-bm-${count.index}"
-  admin_state_up        = true
-  port_security_enabled = var.use_allowed_address_pairs ? true : false
+  count          = var.baremetal_node_count
+  name           = "ironic-bm-${count.index}"
+  admin_state_up = true
 }
 
 resource "openstack_networking_subnet_v2" "bm" {
@@ -110,6 +77,8 @@ resource "openstack_networking_subnet_v2" "bm" {
 
 # =============================================================================
 # Ports - DevStack VM
+#   NIC 0: management (SSH, internet)
+#   NIC 1..N: per-node bare metal links (bridged to local Cisco 9k access ports)
 # =============================================================================
 
 resource "openstack_networking_port_v2" "devstack_mgmt" {
@@ -124,64 +93,21 @@ resource "openstack_networking_port_v2" "devstack_mgmt" {
   }
 }
 
-resource "openstack_networking_port_v2" "devstack_trunk" {
-  name               = "devstack-trunk"
-  network_id         = openstack_networking_network_v2.trunk.id
-  admin_state_up     = true
-  port_security_enabled = false
-
-  fixed_ip {
-    subnet_id = openstack_networking_subnet_v2.trunk.id
-  }
-}
-
-# =============================================================================
-# Ports - Cisco 9k switch
-#   NIC ordering matters: NIC 0 = mgmt0, NIC 1 = Ethernet1/1, NIC 2+ = Ethernet1/2+
-# =============================================================================
-
-resource "openstack_networking_port_v2" "switch_mgmt" {
-  name           = "cisco9k-mgmt"
-  network_id     = openstack_networking_network_v2.mgmt.id
+resource "openstack_networking_port_v2" "devstack_bm" {
+  count          = var.baremetal_node_count
+  name           = "devstack-bm-${count.index}"
+  network_id     = openstack_networking_network_v2.bm[count.index].id
   admin_state_up = true
-  security_group_ids = [openstack_networking_secgroup_v2.ironic_dev.id]
-
-  fixed_ip {
-    subnet_id  = openstack_networking_subnet_v2.mgmt.id
-    ip_address = var.switch_mgmt_ip
-  }
-}
-
-resource "openstack_networking_port_v2" "switch_trunk" {
-  name               = "cisco9k-trunk"
-  network_id         = openstack_networking_network_v2.trunk.id
-  admin_state_up     = true
-  port_security_enabled = false
-
-  fixed_ip {
-    subnet_id = openstack_networking_subnet_v2.trunk.id
-  }
-}
-
-resource "openstack_networking_port_v2" "switch_bm" {
-  count              = var.baremetal_node_count
-  name               = "cisco9k-bm-${count.index}"
-  network_id         = openstack_networking_network_v2.bm[count.index].id
-  admin_state_up     = true
-  port_security_enabled = var.use_allowed_address_pairs ? true : false
 
   fixed_ip {
     subnet_id = openstack_networking_subnet_v2.bm[count.index].id
   }
 
-  # When port security is on, allow any IP from this port's MAC.
-  # This permits bare metal traffic with IPs assigned by DevStack's Neutron
-  # (not the hosting cloud) to pass through.
-  dynamic "allowed_address_pairs" {
-    for_each = var.use_allowed_address_pairs ? [1] : []
-    content {
-      ip_address = "0.0.0.0/0"
-    }
+  # Allow any IP from this port's MAC. DevStack bridges this NIC to the
+  # local Cisco 9k's access port, so traffic from the switch (with
+  # DevStack-assigned IPs) flows through here.
+  allowed_address_pairs {
+    ip_address = "0.0.0.0/0"
   }
 }
 
@@ -190,25 +116,19 @@ resource "openstack_networking_port_v2" "switch_bm" {
 # =============================================================================
 
 resource "openstack_networking_port_v2" "bm_node" {
-  count              = var.baremetal_node_count
-  name               = "bm-node-${count.index}"
-  network_id         = openstack_networking_network_v2.bm[count.index].id
-  admin_state_up     = true
-  port_security_enabled = var.use_allowed_address_pairs ? true : false
+  count          = var.baremetal_node_count
+  name           = "bm-node-${count.index}"
+  network_id     = openstack_networking_network_v2.bm[count.index].id
+  admin_state_up = true
 
   fixed_ip {
     subnet_id = openstack_networking_subnet_v2.bm[count.index].id
   }
 
-  # When port security is on, allow any IP from this port's MAC.
-  # Bare metal nodes get IPs from DevStack's Neutron via the switch, not from
-  # the hosting cloud. Without this, the hosting cloud's anti-spoofing rules
-  # would drop frames with those "unexpected" source IPs.
-  dynamic "allowed_address_pairs" {
-    for_each = var.use_allowed_address_pairs ? [1] : []
-    content {
-      ip_address = "0.0.0.0/0"
-    }
+  # Allow any IP from this port's MAC. Bare metal nodes get IPs from
+  # DevStack's Neutron via the switch, not from the hosting cloud.
+  allowed_address_pairs {
+    ip_address = "0.0.0.0/0"
   }
 }
 

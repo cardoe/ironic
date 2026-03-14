@@ -18,7 +18,7 @@ info() { echo -e "      $1"; }
 ERRORS=0
 WARNINGS=0
 
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+SWITCH_IP="${SWITCH_IP:-192.168.100.20}"
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 echo "=============================================="
@@ -80,10 +80,18 @@ else
 fi
 echo ""
 
-# ---- Cisco 9k Switch ----
-echo "--- Cisco Nexus 9000v Switch ---"
+# ---- Local Cisco 9k VM ----
+echo "--- Cisco Nexus 9000v (local VM) ---"
+if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
+    pass "Cisco 9k VM running (PID $(cat /tmp/cisco9k.pid))"
+else
+    fail "Cisco 9k VM not running"
+    info "Check: ls /tmp/cisco9k.pid; telnet 127.0.0.1 4000"
+    ERRORS=$((ERRORS + 1))
+fi
+
 if ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null; then
-    pass "Switch reachable at $SWITCH_IP"
+    pass "Switch reachable at $SWITCH_IP (local bridge)"
 else
     fail "Switch not reachable at $SWITCH_IP"
     ERRORS=$((ERRORS + 1))
@@ -97,21 +105,34 @@ else
 fi
 echo ""
 
-# ---- OVS Trunk Bridge ----
-echo "--- OVS Trunk Configuration ---"
+# ---- OVS Bridge ----
+echo "--- OVS Configuration ---"
 if sudo ovs-vsctl br-exists brbm 2>/dev/null; then
     pass "OVS bridge 'brbm' exists"
-    trunk_ports=$(sudo ovs-vsctl list-ports brbm 2>/dev/null)
-    if [[ -n "$trunk_ports" ]]; then
-        pass "brbm has ports: $trunk_ports"
+    brbm_ports=$(sudo ovs-vsctl list-ports brbm 2>/dev/null)
+    if echo "$brbm_ports" | grep -q "tap-sw-trunk"; then
+        pass "Trunk tap (tap-sw-trunk) connected to brbm"
     else
-        warn "brbm has no ports - trunk interface may not be bridged"
+        warn "tap-sw-trunk not found on brbm - trunk may not be bridged"
         WARNINGS=$((WARNINGS + 1))
     fi
 else
     fail "OVS bridge 'brbm' not found"
     ERRORS=$((ERRORS + 1))
 fi
+echo ""
+
+# ---- Per-node bridges ----
+echo "--- Per-node Bridges ---"
+for br in $(ip -o link show type bridge | awk -F': ' '{print $2}' | grep '^br-bm-'); do
+    members=$(bridge link show master "$br" 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
+    if [[ -n "$members" ]]; then
+        pass "$br: $members"
+    else
+        warn "$br has no members"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+done
 echo ""
 
 # ---- NGS Configuration ----

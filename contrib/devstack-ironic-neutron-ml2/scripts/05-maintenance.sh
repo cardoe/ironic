@@ -8,12 +8,12 @@
 #   status    - Show status of all services and components
 #   restart   - Restart all DevStack services
 #   logs      - Tail key service logs (Ctrl+C to stop)
-#   reconnect - Re-bridge the trunk interface to OVS (after reboot)
+#   reconnect - Re-bridge trunk tap and BM interfaces (after reboot)
 #   redeploy  - Undeploy all instances and reset nodes to available
 
 set -uo pipefail
 
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+SWITCH_IP="${SWITCH_IP:-192.168.100.20}"
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 GREEN='\033[0;32m'
@@ -59,12 +59,24 @@ cmd_status() {
     done
 
     echo ""
+    echo "--- Cisco 9k (local VM) ---"
+    if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
+        pass "Cisco 9k running (PID $(cat /tmp/cisco9k.pid))"
+    else
+        warn "Cisco 9k not running"
+    fi
+    ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null && pass "Switch at $SWITCH_IP" || warn "Switch unreachable"
+
+    echo ""
     echo "--- OVS brbm ports ---"
     sudo ovs-vsctl list-ports brbm 2>/dev/null || warn "brbm not found"
 
     echo ""
-    echo "--- Switch connectivity ---"
-    ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null && pass "Switch at $SWITCH_IP" || warn "Switch unreachable"
+    echo "--- Per-node bridges ---"
+    for br in $(ip -o link show type bridge | awk -F': ' '{print $2}' | grep '^br-bm-'); do
+        members=$(bridge link show master "$br" 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
+        echo "  $br: ${members:-<no members>}"
+    done
 
     echo ""
     echo "--- Redfish API ---"
@@ -92,24 +104,38 @@ cmd_logs() {
 }
 
 cmd_reconnect() {
-    # After a VM reboot, the trunk interface bridge may be lost.
-    # Re-detect and re-bridge it.
-    info "Detecting trunk interface..."
+    # After a VM reboot, bridges and trunk tap may be lost.
+    # Re-create them.
+
+    info "Re-creating trunk tap..."
+    sudo ip tuntap add dev tap-sw-trunk mode tap 2>/dev/null || true
+    sudo ip link set tap-sw-trunk up
+    sudo ovs-vsctl --may-exist add-port brbm tap-sw-trunk
+    pass "Trunk tap bridged to brbm"
+
+    info "Re-creating management bridge..."
+    sudo ip link add br-sw-mgmt type bridge 2>/dev/null || true
+    sudo ip addr add 192.168.100.1/24 dev br-sw-mgmt 2>/dev/null || true
+    sudo ip link set br-sw-mgmt up
+
+    info "Detecting and re-bridging BM interfaces..."
     local interfaces
     interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
         grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
-    local trunk_if
-    trunk_if=$(echo "$interfaces" | sed -n '2p')
 
-    if [[ -z "$trunk_if" ]]; then
-        fail "Cannot detect trunk interface"
-        return 1
-    fi
-
-    info "Trunk interface: $trunk_if"
-    sudo ovs-vsctl --may-exist add-port brbm "$trunk_if"
-    sudo ip link set dev "$trunk_if" up
-    pass "Trunk interface $trunk_if bridged to brbm"
+    local idx=0
+    while IFS= read -r iface; do
+        if [[ $idx -gt 0 ]]; then
+            local bm_idx=$((idx - 1))
+            local br_name="br-bm-${bm_idx}"
+            sudo ip link add "$br_name" type bridge 2>/dev/null || true
+            sudo ip link set "$iface" master "$br_name" 2>/dev/null || true
+            sudo ip link set "$iface" up
+            sudo ip link set "$br_name" up
+            pass "$br_name with $iface"
+        fi
+        idx=$((idx + 1))
+    done <<< "$interfaces"
 }
 
 cmd_redeploy() {

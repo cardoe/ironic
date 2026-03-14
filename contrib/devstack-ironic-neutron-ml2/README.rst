@@ -5,11 +5,11 @@ Cisco Nexus 9000v on a Hosting OpenStack Cloud
 
 This guide sets up a development environment for working on Ironic and
 Neutron ML2 drivers. The key design: a **hosting OpenStack cloud** provides
-all the compute and networking, while **DevStack** runs inside a VM on that
-cloud. sushy-tools uses the **Nova driver** to manage sibling VMs (on the
-same hosting cloud) as virtual bare metal nodes. A **Cisco Nexus 9000v**
-switch simulator (also a Nova instance) sits between the bare metal VMs
-and DevStack, providing realistic VLAN switching for ML2 driver testing.
+compute and networking, while **DevStack** runs inside a VM on that cloud.
+sushy-tools uses the **Nova driver** to manage sibling VMs (on the same
+hosting cloud) as virtual bare metal nodes. A **Cisco Nexus 9000v** switch
+simulator runs locally inside the DevStack VM (nested virtualization),
+providing realistic VLAN switching for ML2 driver testing.
 
 .. contents:: Table of Contents
    :local:
@@ -23,33 +23,43 @@ inside it and manages "bare metal" that is actually VMs on the same cloud.
 
 ::
 
-  Hosting OpenStack Cloud (Geneve tenant networks)
-  ================================================
+  Hosting OpenStack Cloud
+  =======================
 
-  Network: ironic-mgmt (Geneve, DHCP, router to external)
-  -------------------------------------------------------
-  172.24.5.10           172.24.5.20
-  DevStack VM --------> Cisco 9k sim (mgmt0)
-  (floating IP)         (SSH config, NGS access)
-
-
-  Network: ironic-trunk (Geneve, no DHCP, port security off)
-  ----------------------------------------------------------
-  DevStack VM --------> Cisco 9k sim (Ethernet1/1 trunk)
-  (OVS brbm)           (carries all VLANs)
+  Network: ironic-mgmt (DHCP, router to external)
+  ------------------------------------------------
+  172.24.5.10
+  DevStack VM -------- BM Node 0 ---- BM Node 1 ---- BM Node 2
+  (floating IP)        (sushy-tools reaches via hosting cloud Nova API)
 
 
-  Network: ironic-bm-0 (Geneve, no DHCP, port security off)
-  ----------------------------------------------------------
-  BM Node 0 ----------> Cisco 9k sim (Ethernet1/2 access)
+  Network: ironic-bm-0 (no DHCP, allowed_address_pairs)
+  ------------------------------------------------------
+  DevStack VM (ethN) <------> BM Node 0 (eth0)
 
-  Network: ironic-bm-1 (Geneve, no DHCP, port security off)
-  ----------------------------------------------------------
-  BM Node 1 ----------> Cisco 9k sim (Ethernet1/3 access)
+  Network: ironic-bm-1 (no DHCP, allowed_address_pairs)
+  ------------------------------------------------------
+  DevStack VM (ethN) <------> BM Node 1 (eth0)
 
-  Network: ironic-bm-2 (Geneve, no DHCP, port security off)
-  ----------------------------------------------------------
-  BM Node 2 ----------> Cisco 9k sim (Ethernet1/4 access)
+  Network: ironic-bm-2 (no DHCP, allowed_address_pairs)
+  ------------------------------------------------------
+  DevStack VM (ethN) <------> BM Node 2 (eth0)
+
+
+  Inside DevStack VM (nested virtualization)
+  ==========================================
+
+                            +-------------------------+
+                            |  Cisco 9k (local QEMU)  |
+                            |                         |
+  OVS brbm <-- tap-trunk -> | Ethernet1/1 (trunk)     |
+                            |                         |
+  br-bm-0 <--- tap -------> | Ethernet1/2 (access) ---+--> ethN (ironic-bm-0)
+  br-bm-1 <--- tap -------> | Ethernet1/3 (access) ---+--> ethM (ironic-bm-1)
+  br-bm-2 <--- tap -------> | Ethernet1/4 (access) ---+--> ethP (ironic-bm-2)
+                            |                         |
+  br-sw-mgmt <-- tap -----> | mgmt0 (192.168.100.20)  |
+                            +-------------------------+
 
 
   Data Flow (during Ironic provisioning)
@@ -58,29 +68,32 @@ inside it and manages "bare metal" that is actually VMs on the same cloud.
   1. Ironic tells sushy-tools to boot BM Node 0 via virtual media
   2. sushy-tools calls hosting cloud Nova API to rebuild instance
   3. NGS configures Cisco 9k: Ethernet1/2 -> provisioning VLAN
-  4. IPA traffic: BM Node 0 -> ironic-bm-0 -> Cisco 9k Ethernet1/2
-     -> trunk (VLAN tagged) -> ironic-trunk -> DevStack OVS brbm
+  4. IPA traffic: BM Node 0 eth0 -> ironic-bm-0 network
+     -> DevStack ethN -> br-bm-0 -> 9k Ethernet1/2
+     -> trunk (VLAN tagged) -> tap-sw-trunk -> OVS brbm
      -> Neutron DHCP / Ironic conductor
   5. IPA phones home, Ironic deploys the OS
   6. NGS switches Ethernet1/2 to tenant VLAN
 
 Key design decisions:
 
-* **Geneve networks** provide L2 connectivity between VMs. Each
-  "cable" between a bare metal node and a switch port is a separate
-  Geneve network. This gives clean isolation without trunk port
-  support on the hosting cloud.
+* **Per-node networks** on the hosting cloud provide L2 connectivity
+  between each bare metal VM and the DevStack VM. Each "cable" between
+  a bare metal node and a switch port is a separate hosting cloud network.
 
-* **Port security is disabled** on trunk and bare metal networks so
-  VLAN-tagged frames and arbitrary DHCP can flow through.
+* **``allowed_address_pairs``** with ``0.0.0.0/0`` on all per-node
+  ports. Bare metal VMs get IPs from DevStack's Neutron, not the hosting
+  cloud. The ``allowed_address_pairs`` permits these IPs through.
+  Traffic is untagged (switch access ports), so this is sufficient.
+
+* **Cisco 9k runs locally** inside the DevStack VM via nested KVM/QEMU.
+  The trunk between the switch and OVS brbm is a local tap device. This
+  avoids needing ``port_security_enabled=false`` on the hosting cloud
+  (VLAN-tagged trunk frames cannot pass with just ``allowed_address_pairs``).
 
 * **DHCP is disabled** on bare metal networks so the hosting cloud's
   Neutron doesn't interfere. All bare metal DHCP comes from DevStack's
   Neutron via the switch.
-
-* **The Cisco 9k runs as a Nova instance** with one NIC per network.
-  NIC ordering matters: NIC 0 = mgmt0, NIC 1 = Ethernet1/1 (trunk),
-  NIC 2+ = Ethernet1/2+ (access ports).
 
 * **Bare metal VMs are pre-created** by Terraform, then managed by
   sushy-tools via the hosting cloud's Nova API. Ironic enrolls them
@@ -92,19 +105,13 @@ Prerequisites
 Hosting Cloud Requirements
 --------------------------
 
-* Geneve (or VXLAN) tenant networks with the ability to create many
-* **Port security flexibility** -- one of the following (see
-  `Port Security Strategies`_ below):
-
-  * **Best:** ability to disable port security on networks/ports, OR
-  * **Fallback:** ability to set ``allowed_address_pairs`` with
-    ``ip_address=0.0.0.0/0`` on ports (most clouds allow this)
-* **UEFI boot support** for Nova instances (OVMF firmware) -- needed for
-  the Cisco 9k simulator. Verify that your cloud supports the
-  ``hw_firmware_type=uefi`` image property.
-* **Serial console or VNC access** for initial Cisco 9k switch setup
-  (POAP skip). Serial console (nova-serialproxy) is preferred.
-* Sufficient quota: ~5 instances, ~6 networks, ~15 ports, 1 floating IP
+* Tenant networks with the ability to create many
+* ``allowed_address_pairs`` with ``ip_address=0.0.0.0/0`` on ports
+* **Nested virtualization** support (the DevStack VM runs a QEMU VM
+  inside it for the Cisco 9k). Alternatively the 9k can run under TCG
+  (software emulation) but this is very slow.
+* Sufficient quota: ~4 instances (1 DevStack + 3 BM), ~4 networks, ~10 ports,
+  1 floating IP
 * An Ubuntu 24.04 image in Glance
 * Appropriate flavors (see below)
 
@@ -113,73 +120,18 @@ Verify Hosting Cloud Compatibility
 
 Run these checks before starting::
 
-    # Test 1: Can port security be disabled at the network level?
-    openstack network create --disable-port-security test-portsec
-    openstack network delete test-portsec
-    # If this works: use default settings (use_allowed_address_pairs = false)
-
-    # Test 2: If Test 1 fails, can allowed_address_pairs be set?
+    # Verify allowed_address_pairs works
     openstack network create test-aap
     openstack port create --network test-aap \
         --allowed-address ip-address=0.0.0.0/0 test-aap-port
     openstack port delete test-aap-port
     openstack network delete test-aap
-    # If this works: set use_allowed_address_pairs = true in terraform.tfvars
 
-    # UEFI images are supported (upload a small test)
-    openstack image create --disk-format qcow2 --container-format bare \
-        --property hw_firmware_type=uefi --property hw_machine_type=q35 \
-        --file /dev/null test-uefi
-    openstack image delete test-uefi
+    # Check nested virt: launch a test instance and check for /dev/kvm
+    # (If not available, the 9k will run under TCG -- slow but functional)
 
     # Check quotas
     openstack quota show
-
-    # Check serial console availability
-    # (create a small test instance first, then:)
-    openstack console url show --serial <test-instance>
-
-.. _Port Security Strategies:
-
-Port Security Strategies
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-There are two separate port security concerns:
-
-1. **Per-node bare metal links** (untagged traffic): Bare metal VMs get
-   IPs from DevStack's Neutron, not the hosting cloud. The hosting cloud's
-   anti-spoofing rules would drop frames with these "unexpected" source IPs.
-
-2. **Trunk link** (VLAN-tagged traffic): The trunk between the Cisco 9k and
-   DevStack carries 802.1Q-tagged frames. Port security drops these
-   regardless of IP/MAC whitelisting.
-
-**Strategy A -- Disable port security (default):**
-
-Set ``use_allowed_address_pairs = false`` (default). Both networks and
-ports are created with ``port_security_enabled = false``. This is the
-simplest approach but requires the hosting cloud to allow it.
-
-**Strategy B -- allowed_address_pairs fallback:**
-
-Set ``use_allowed_address_pairs = true``. Per-node bare metal networks
-keep port security ON, but ports get ``allowed_address_pairs`` with
-``ip_address=0.0.0.0/0``, which permits any source IP from the port's
-MAC address. Most clouds allow this even when they block disabling port
-security entirely. This works for per-node links because the traffic is
-**untagged** (switch access ports strip VLAN tags).
-
-The trunk network still uses ``port_security_enabled = false`` because
-VLAN-tagged frames cannot be whitelisted via ``allowed_address_pairs``.
-If your cloud also blocks disabling port security on the trunk network,
-run the Cisco 9k locally on the DevStack host -- the trunk becomes a
-local OVS bridge and never touches the hosting cloud's network.
-
-**Note on overlays:** The bare metal VMs see a regular network interface
-(``eth0``). They have no knowledge of the underlying Geneve overlay --
-the hosting cloud handles encapsulation transparently below the VM.
-``allowed_address_pairs`` is sufficient because the per-node links carry
-untagged traffic. No additional overlay (VXLAN-inside-Geneve) is needed.
 
 Flavor Sizing
 -------------
@@ -188,9 +140,11 @@ Flavor Sizing
 VM             vCPUs  RAM    Disk
 ============== ====== ====== ======
 DevStack       8+     32 GB  100 GB
-Cisco 9k       2      8 GB   10 GB
 Bare metal (x3) 1-2   2-4 GB 10 GB
 ============== ====== ====== ======
+
+The DevStack flavor needs extra headroom (2 vCPU, 8 GB RAM) for the
+nested Cisco 9k VM.
 
 Local Requirements
 ------------------
@@ -227,48 +181,18 @@ Step 2: Create Infrastructure
 This creates:
 
 * 1 management network (``ironic-mgmt``) with router and floating IP
-* 1 trunk network (``ironic-trunk``, port security off)
-* N bare metal networks (``ironic-bm-{0..N}``, port security off)
-* DevStack VM (Ubuntu 24.04)
-* Cisco Nexus 9000v VM (uploaded to Glance with UEFI properties)
-* N bare metal VMs
-* All ports with correct security and addressing
+* N bare metal networks (``ironic-bm-{0..N}``, ``allowed_address_pairs``)
+* DevStack VM (Ubuntu 24.04) with 1 mgmt NIC + N BM NICs
+* N bare metal VMs (one NIC each on their per-node network)
+* All ports with ``allowed_address_pairs`` for BM traffic
 
-Step 3: Configure the Cisco 9k Switch
----------------------------------------
-
-The switch needs initial console-based setup (POAP skip, admin password,
-SSH enable) before SSH-based configuration can proceed.
-
-**Initial console setup** (one-time, manual):
+Step 3: Copy the Cisco 9k Image
+---------------------------------
 
 ::
 
-    # Get serial console URL from the hosting cloud
-    openstack console url show --serial cisco-nexus9k
-
-    # Connect and wait ~5-10 minutes for "Abort Power On Auto Provisioning"
-    # Then run these commands:
-    #   skip
-    #   (wait for login prompt)
-    #   admin
-    #   (blank password)
-    #   configure
-    #   username admin password system_s3cret! role network-admin
-    #   int mgmt0
-    #   ip address 172.24.5.20/24
-    #   exit
-    #   feature ssh
-    #   feature lldp
-    #   exit
-    #   copy run start
-
-**SSH-based configuration** (automated):
-
-::
-
-    # From a machine that can reach 172.24.5.20 (e.g., the DevStack VM)
-    bash scripts/01-configure-switch.sh 172.24.5.20 "system_s3cret!" 3
+    scp /path/to/nexus9300v.qcow2 \
+        ubuntu@$(terraform output -raw devstack_floating_ip):/tmp/nexus9300v.qcow2
 
 Step 4: Set Up DevStack
 ------------------------
@@ -289,19 +213,54 @@ This script:
 
 1. Creates the ``stack`` user and clones DevStack
 2. Writes hosting cloud credentials to ``clouds.yaml`` (for sushy-tools)
-3. Generates ``local.conf`` with:
+3. Creates local bridges: ``br-sw-mgmt`` (switch management),
+   ``br-bm-{N}`` (per-node, bridging hosting cloud NIC to 9k tap)
+4. Launches the Cisco 9k as a local QEMU VM with correct NIC ordering:
+   mgmt0, trunk (tap to brbm), access ports (taps to per-node bridges)
+5. Generates ``local.conf`` with:
 
    - Ironic in hardware mode (``IRONIC_IS_HARDWARE=True``) -- no local VMs
-   - Redfish driver (will be reconfigured for Nova driver post-stack)
+   - Redfish driver (reconfigured for Nova driver post-stack)
    - Neutron ML2 with networking-generic-switch
    - VLAN tenant networking (range 100:150)
 
-4. Runs ``stack.sh``
-5. Post-stack: reconfigures sushy-tools for the Nova driver, configures
-   NGS with the Cisco 9k switch details, bridges the trunk interface
-   to OVS ``brbm``
+6. Runs ``stack.sh``
+7. Post-stack: bridges trunk tap to OVS brbm, reconfigures sushy-tools
+   for the Nova driver, configures NGS with the local switch IP
 
-Step 5: Enroll Bare Metal Nodes
+Step 5: Configure the Cisco 9k Switch
+---------------------------------------
+
+The switch needs initial console-based setup (POAP skip, admin password,
+SSH enable) before SSH-based configuration can proceed.
+
+**Initial console setup** (one-time, manual)::
+
+    # On the DevStack VM
+    telnet 127.0.0.1 4000
+
+    # Wait ~5-10 minutes for "Abort Power On Auto Provisioning"
+    # Then run these commands:
+    #   skip
+    #   (wait for login prompt)
+    #   admin
+    #   (blank password)
+    #   configure
+    #   username admin password system_s3cret! role network-admin
+    #   int mgmt0
+    #   ip address 192.168.100.20/24
+    #   exit
+    #   feature ssh
+    #   feature lldp
+    #   exit
+    #   copy run start
+
+**SSH-based configuration** (automated)::
+
+    # On the DevStack VM
+    bash scripts/01-configure-switch.sh 192.168.100.20 "system_s3cret!" 3
+
+Step 6: Enroll Bare Metal Nodes
 --------------------------------
 
 Export node information from Terraform and enroll in Ironic::
@@ -320,14 +279,14 @@ This creates Ironic nodes with:
 * Port with ``local_link_connection`` pointing at the correct switch port
 * ``network_interface=neutron`` for ML2 integration
 
-Step 6: Verify
+Step 7: Verify
 ---------------
 
 ::
 
     bash scripts/04-verify.sh
 
-Step 7: Test a Deployment
+Step 8: Test a Deployment
 --------------------------
 
 ::
@@ -356,7 +315,7 @@ Maintenance
     # Restart all DevStack services
     bash scripts/05-maintenance.sh restart
 
-    # Re-bridge trunk interface after a VM reboot
+    # Re-bridge interfaces after a VM reboot
     bash scripts/05-maintenance.sh reconnect
 
     # Undeploy all instances and reset nodes
@@ -370,7 +329,8 @@ Tear Down
 
 ::
 
-    # On the DevStack VM
+    # On the DevStack VM (stop the local 9k)
+    sudo kill $(cat /tmp/cisco9k.pid) 2>/dev/null || true
     cd /opt/stack/devstack && ./unstack.sh
 
     # On your local machine
@@ -389,31 +349,25 @@ sushy-tools Not Discovering Bare Metal VMs
 
 .. note::
    sushy-tools with the Nova driver lists ALL instances in the configured
-   cloud/project as Redfish Systems. The DevStack VM and Cisco 9k VM will
-   also appear. This is harmless -- Ironic only manages explicitly enrolled
-   nodes.
+   cloud/project as Redfish Systems. The DevStack VM will also appear.
+   This is harmless -- Ironic only manages explicitly enrolled nodes.
 
 VLAN Traffic Not Flowing Through the Switch
 ---------------------------------------------
 
-* Verify trunk interface is bridged: ``sudo ovs-vsctl list-ports brbm``
-* Check switch trunk port: ``ssh admin@172.24.5.20 "show int trunk"``
-* Verify port security settings on hosting cloud networks/ports:
-  ``openstack port show <port-id> -c port_security_enabled -c allowed_address_pairs``
-* If using ``allowed_address_pairs``, verify they're set:
-  ``openstack port show <bm-port-id> -c allowed_address_pairs``
+* Verify trunk tap is bridged: ``sudo ovs-vsctl list-ports brbm``
+  (should include ``tap-sw-trunk``)
+* Verify per-node bridges: ``bridge link show``
+  (each ``br-bm-N`` should have the hosting cloud NIC and a 9k tap)
+* Check switch trunk port: ``ssh admin@192.168.100.20 "show int trunk"``
 * Check OVS flows: ``sudo ovs-ofctl dump-flows brbm``
 
-Switch Console Access
-----------------------
+Cisco 9k Serial Console
+-------------------------
 
-If the hosting cloud has serial console proxy (nova-serialproxy)::
+::
 
-    openstack console url show --serial cisco-nexus9k
-
-If only VNC is available::
-
-    openstack console url show cisco-nexus9k
+    telnet 127.0.0.1 4000
 
 Default switch credentials: ``admin`` / ``system_s3cret!``
 
@@ -426,19 +380,16 @@ Bare Metal Node Won't Boot
 * Verify the correct Nova instance UUID is used as the Redfish system ID
 * Check Ironic conductor logs: ``journalctl -u devstack@ir-cond``
 
+Nested Virtualization Not Available
+-------------------------------------
+
+If ``/dev/kvm`` is not present inside the DevStack VM, the Cisco 9k
+will run under QEMU TCG (software emulation). This works but is
+significantly slower (~10x boot time). Check with your hosting cloud
+whether nested virtualization can be enabled for the DevStack flavor.
+
 Known Limitations and TODOs
 ===========================
-
-* **NIC ordering on the Cisco 9k.** Nova does not guarantee that the
-  order of port attachments maps to the order of PCI slots inside the
-  VM. Some clouds use different PCI slot assignment strategies. If the
-  Cisco 9k interfaces don't map correctly (mgmt0, Ethernet1/1, ...),
-  you may need to check the instance's XML or use PCI passthrough hints.
-
-* **Trunk interface detection.** The ``02-setup-devstack.sh`` script
-  auto-detects the trunk interface as the "second NIC" by alphabetical
-  name sort. Cloud-init may rename interfaces unpredictably. Set the
-  ``TRUNK_INTERFACE`` environment variable explicitly if detection fails.
 
 * **sushy-tools Nova driver maturity.** The Nova driver for sushy-tools
   must support virtual media operations (typically via Nova rebuild).
@@ -447,28 +398,24 @@ Known Limitations and TODOs
 
 * **sushy-tools sees all instances.** The Nova driver lists ALL Nova
   instances in the configured project as Redfish Systems -- including
-  the DevStack VM and Cisco 9k VM. This is harmless (Ironic only manages
-  enrolled nodes) but may be confusing during debugging.
+  the DevStack VM itself. This is harmless (Ironic only manages enrolled
+  nodes) but may be confusing during debugging.
 
 * **bridge_mappings configuration.** The DevStack ``local.conf`` sets
   ``OVS_PHYSICAL_BRIDGE=brbm`` and ``PHYSICAL_NETWORK=mynetwork``. Verify
   that DevStack correctly generates ``bridge_mappings = mynetwork:brbm``
   in the ML2 OVS agent config. If not, add it manually post-stack.
 
-* **Large image uploads.** The Cisco 9k QCOW2 is 1-2 GB. Some clouds
-  limit Glance image upload size or require importing from a URL. If
-  the Terraform ``local_file_path`` upload fails, upload the image
-  manually via ``openstack image create`` with ``--file``.
+* **BM interface detection.** The ``02-setup-devstack.sh`` script
+  auto-detects BM network interfaces as all NICs after the first one
+  (sorted alphabetically). Cloud-init may rename interfaces
+  unpredictably. If detection fails, set up bridges manually.
 
-* **Port security: overlay is transparent to BM nodes.** The bare metal
-  VMs see a regular network interface (``eth0``). They have no knowledge
-  of the underlying Geneve overlay -- the hosting cloud's OVS handles all
-  encapsulation/decapsulation on the compute nodes, below the VM. This is
-  the standard Neutron model. With ``allowed_address_pairs`` set to
-  ``0.0.0.0/0``, DevStack-assigned IPs pass through without the BM node
-  needing any special configuration. Strategy C (building a separate VXLAN
-  overlay) should not be necessary on any cloud that supports
-  ``allowed_address_pairs``.
+* **Cisco 9k NIC ordering.** Inside the local QEMU VM, NX-OS maps
+  virtio NICs in order: NIC 0 = mgmt0, NIC 1 = Ethernet1/1 (trunk),
+  NIC 2+ = Ethernet1/2+ (access ports). The QEMU command builds
+  NICs in this order. If interfaces don't map correctly, check the
+  QEMU command arguments.
 
 File Reference
 ==============
@@ -481,12 +428,12 @@ File Reference
     |   +-- main.tf                 Provider and data sources
     |   +-- variables.tf            Input variables
     |   +-- network.tf              Networks, subnets, ports, security groups
-    |   +-- compute.tf              VM instances and Glance image
+    |   +-- compute.tf              VM instances (DevStack + bare metal)
     |   +-- outputs.tf              Terraform outputs (IPs, UUIDs, MACs)
     |   +-- terraform.tfvars.example
     +-- scripts/
-        +-- 01-configure-switch.sh  Configure Cisco 9k via SSH
-        +-- 02-setup-devstack.sh    Full DevStack setup on the VM
+        +-- 01-configure-switch.sh  Configure Cisco 9k via SSH (local)
+        +-- 02-setup-devstack.sh    Full DevStack setup + local 9k launch
         +-- 03-enroll-nodes.sh      Enroll bare metal VMs in Ironic
         +-- 04-verify.sh            Post-deployment verification
         +-- 05-maintenance.sh       Lifecycle management

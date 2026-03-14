@@ -1,9 +1,9 @@
 #!/bin/bash
 # 01-configure-switch.sh - Configure the Cisco Nexus 9000v switch simulator
 #
-# The Cisco 9k runs as a Nova instance on the hosting cloud. Initial
-# configuration (POAP skip, admin password) must be done via the serial
-# console. After that, this script handles SSH-based configuration.
+# The Cisco 9k runs as a local QEMU VM inside the DevStack host (nested virt).
+# Initial configuration (POAP skip, admin password) must be done via the
+# local serial console. After that, this script handles SSH-based configuration.
 #
 # Usage:
 #   bash scripts/01-configure-switch.sh [switch_ip] [password] [node_count]
@@ -14,27 +14,26 @@
 #   - sshpass must be installed: apt-get install sshpass
 #
 # Manual initial setup via serial console:
-#   1. openstack console url show --serial cisco-nexus9k
-#   2. Connect to the serial console URL
-#   3. Wait for "Abort Power On Auto Provisioning" prompt (~5-10 min)
-#   4. Type: skip
-#   5. Wait for "login:" prompt (~2 min)
-#   6. Login: admin (no password)
-#   7. Run these commands:
+#   1. telnet 127.0.0.1 4000
+#   2. Wait for "Abort Power On Auto Provisioning" prompt (~5-10 min)
+#   3. Type: skip
+#   4. Wait for "login:" prompt (~2 min)
+#   5. Login: admin (no password)
+#   6. Run these commands:
 #        configure
 #        username admin password system_s3cret! role network-admin
 #        int mgmt0
-#        ip address 172.24.5.20/24
+#        ip address 192.168.100.20/24
 #        exit
 #        feature ssh
 #        feature lldp
 #        exit
 #        copy run start
-#   8. Now run this script for the remaining configuration.
+#   7. Now run this script for the remaining configuration.
 
 set -euo pipefail
 
-SWITCH_IP="${1:-172.24.5.20}"
+SWITCH_IP="${1:-192.168.100.20}"
 SWITCH_PASS="${2:-system_s3cret!}"
 NODE_COUNT="${3:-3}"
 SWITCH_USER="admin"
@@ -58,7 +57,7 @@ fi
 echo "=============================================="
 echo "Cisco Nexus 9000v Switch Configuration"
 echo "=============================================="
-echo "  Switch IP: $SWITCH_IP"
+echo "  Switch IP: $SWITCH_IP (local management bridge)"
 echo "  Node count: $NODE_COUNT"
 echo ""
 
@@ -83,6 +82,7 @@ for i in $(seq 1 $MAX_ATTEMPTS); do
         fail "Cannot reach switch at $SWITCH_IP via SSH after $MAX_ATTEMPTS attempts"
         echo ""
         info "Complete the initial setup via serial console first."
+        info "Run: telnet 127.0.0.1 4000"
         info "See the manual steps in the header of this script."
         exit 1
     fi
@@ -100,7 +100,7 @@ CONFIG_CMDS="configure terminal"
 # Enable LLDP globally
 CONFIG_CMDS+="; feature lldp"
 
-# Configure Ethernet1/1 as trunk (carries all VLANs to DevStack)
+# Configure Ethernet1/1 as trunk (carries all VLANs to DevStack OVS brbm)
 CONFIG_CMDS+="; interface Ethernet1/1"
 CONFIG_CMDS+="; switchport"
 CONFIG_CMDS+="; switchport mode trunk"
@@ -146,8 +146,9 @@ echo ""
 pass "Switch configuration complete"
 echo ""
 info "Switch is ready. Key details:"
-info "  Management IP:  $SWITCH_IP"
+info "  Management IP:  $SWITCH_IP (local bridge)"
 info "  Admin user:     $SWITCH_USER"
-info "  Trunk port:     Ethernet1/1 (all VLANs)"
+info "  Trunk port:     Ethernet1/1 (all VLANs, local tap to brbm)"
 info "  Access ports:   Ethernet1/2 - Ethernet1/$((NODE_COUNT + 1))"
+info "  Serial console: telnet 127.0.0.1 4000"
 info "  SSH access:     ssh $SWITCH_USER@$SWITCH_IP"

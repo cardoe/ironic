@@ -9,7 +9,11 @@ variable "external_network_name" {
 }
 
 variable "cisco_9k_image_path" {
-  description = "Local filesystem path to the Cisco Nexus 9000v QCOW2 image"
+  description = <<-EOT
+    Local filesystem path to the Cisco Nexus 9000v QCOW2 image.
+    This image is SCP'd to the DevStack VM (not uploaded to Glance).
+    The 9k runs as a local QEMU VM inside the DevStack host (nested virt).
+  EOT
   type        = string
 }
 
@@ -21,11 +25,6 @@ variable "devstack_image_name" {
 
 variable "devstack_flavor" {
   description = "Flavor for the DevStack VM (needs 8+ vCPU, 32+ GB RAM, 100+ GB disk)"
-  type        = string
-}
-
-variable "cisco_9k_flavor" {
-  description = "Flavor for the Cisco 9k simulator VM (needs 2 vCPU, 8+ GB RAM)"
   type        = string
 }
 
@@ -57,32 +56,19 @@ variable "mgmt_subnet_cidr" {
   default     = "172.24.5.0/24"
 }
 
-variable "switch_mgmt_ip" {
-  description = "Fixed IP for the Cisco 9k switch on the management network"
-  type        = string
-  default     = "172.24.5.20"
-}
-
 variable "devstack_mgmt_ip" {
   description = "Fixed IP for the DevStack VM on the management network"
   type        = string
   default     = "172.24.5.10"
 }
 
-variable "use_allowed_address_pairs" {
+variable "switch_local_mgmt_ip" {
   description = <<-EOT
-    Use allowed_address_pairs instead of disabling port security on networks.
-    Set to true if your hosting cloud does not allow port_security_enabled=false.
-    allowed_address_pairs with 0.0.0.0/0 permits any source IP from the port's
-    MAC, which is sufficient for bare metal per-node links (untagged traffic).
-
-    NOTE: The trunk network still needs port_security_enabled=false for VLAN-
-    tagged frames. If your cloud blocks that entirely, run the Cisco 9k locally
-    on the DevStack host instead (trunk becomes a local bridge, no hosting cloud
-    involvement).
+    IP address for the Cisco 9k switch on the local management bridge
+    inside the DevStack VM. Used by NGS to SSH to the switch.
   EOT
-  type        = bool
-  default     = false
+  type        = string
+  default     = "192.168.100.20"
 }
 
 variable "switch_password" {

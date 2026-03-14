@@ -6,6 +6,7 @@ cloud_name            = "mycloud"
 external_network_name = "external"
 
 # Path to the Cisco Nexus 9000v QCOW2 image on your local machine.
+# This will be SCP'd to the DevStack VM (not uploaded to Glance).
 # Download from https://software.cisco.com (search "Nexus 9000v").
 cisco_9k_image_path = "/path/to/nexus9300v64.10.3.7.M.qcow2"
 
@@ -13,9 +14,8 @@ cisco_9k_image_path = "/path/to/nexus9300v64.10.3.7.M.qcow2"
 devstack_image_name = "Ubuntu-24.04"
 
 # Flavors - adjust to match your hosting cloud's available flavors.
-# DevStack needs significant resources for running all OpenStack services.
+# DevStack needs significant resources, plus overhead for nested Cisco 9k VM.
 devstack_flavor  = "m1.xlarge"    # 8 vCPU, 32 GB RAM, 100 GB disk
-cisco_9k_flavor  = "m1.large"     # 2 vCPU, 8 GB RAM
 baremetal_flavor = "m1.medium"    # Size visible to Ironic as "hardware"
 
 # SSH key pair (must exist in the hosting cloud)
@@ -26,20 +26,12 @@ baremetal_node_count = 3
 
 # Network configuration (defaults are usually fine)
 # mgmt_subnet_cidr = "172.24.5.0/24"
-# switch_mgmt_ip   = "172.24.5.20"
 # devstack_mgmt_ip = "172.24.5.10"
 # dns_nameservers  = ["8.8.8.8", "8.8.4.4"]
 
-# Port security strategy for bare metal networks.
-# Set to true if your hosting cloud does NOT allow port_security_enabled=false.
-# Uses allowed_address_pairs with 0.0.0.0/0 instead, which permits any source
-# IP from the port's MAC address. Most clouds allow this even when they block
-# disabling port security entirely.
-#
-# NOTE: The trunk network always needs port_security_enabled=false for
-# VLAN-tagged frames. If your cloud blocks that too, run the Cisco 9k locally
-# on the DevStack host (trunk stays local, never hits the hosting network).
-# use_allowed_address_pairs = true
+# Local management IP for the Cisco 9k inside the DevStack VM.
+# This is the IP that NGS (networking-generic-switch) uses to SSH to the switch.
+# switch_local_mgmt_ip = "192.168.100.20"
 
 # Switch admin password
 # switch_password = "system_s3cret!"

@@ -2,19 +2,19 @@
 # 02-setup-devstack.sh - Set up DevStack with Ironic + Neutron ML2 on the
 #                         DevStack VM, using sushy-tools Nova driver.
 #
+# The Cisco Nexus 9000v runs locally inside this VM (nested virtualization).
+# Each bare metal network NIC is bridged to the corresponding 9k access port.
+# The trunk between the 9k and OVS brbm is a local tap.
+#
 # Run this ON the DevStack VM as the stack user (or it will create one).
 #
 # Usage:
 #   bash scripts/02-setup-devstack.sh
 #
-# This script:
-#   1. Installs prerequisites
-#   2. Creates the stack user (if needed)
-#   3. Clones DevStack
-#   4. Generates local.conf for Ironic with sushy-tools Nova driver
-#   5. Runs stack.sh
-#   6. Post-stack: reconfigures sushy-tools for Nova driver, configures NGS,
-#      bridges the trunk interface to OVS
+# Prerequisites:
+#   - The Cisco 9k QCOW2 must be SCP'd to the VM (default: /tmp/nexus9300v.qcow2)
+#   - The hosting cloud must support nested virtualization (or the 9k must be
+#     able to run under QEMU TCG, which is very slow)
 
 set -euo pipefail
 
@@ -31,15 +31,13 @@ HOSTING_CLOUD_PASSWORD="${HOSTING_CLOUD_PASSWORD:?Set HOSTING_CLOUD_PASSWORD}"
 HOSTING_CLOUD_USER_DOMAIN="${HOSTING_CLOUD_USER_DOMAIN:-Default}"
 HOSTING_CLOUD_PROJECT_DOMAIN="${HOSTING_CLOUD_PROJECT_DOMAIN:-Default}"
 
-# Switch configuration
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+# Local Cisco 9k switch configuration
+SWITCH_IMAGE="${SWITCH_IMAGE:-/tmp/nexus9300v.qcow2}"
+SWITCH_LOCAL_IP="${SWITCH_LOCAL_IP:-192.168.100.20}"
+SWITCH_LOCAL_GW="${SWITCH_LOCAL_GW:-192.168.100.1}"
+SWITCH_LOCAL_CIDR="${SWITCH_LOCAL_CIDR:-192.168.100.0/24}"
 SWITCH_USER="${SWITCH_USER:-admin}"
 SWITCH_PASS="${SWITCH_PASS:-system_s3cret!}"
-
-# Trunk interface name inside the DevStack VM
-# This is the NIC connected to the ironic-trunk network (typically the second NIC).
-# Check with: ip link show
-TRUNK_INTERFACE="${TRUNK_INTERFACE:-}"
 
 # DevStack configuration
 ADMIN_PASS="${ADMIN_PASSWORD:-password}"
@@ -57,25 +55,27 @@ info() { echo "[INFO] $1"; }
 pass() { echo "[PASS] $1"; }
 fail() { echo "[FAIL] $1"; exit 1; }
 
-detect_trunk_interface() {
-    # The trunk interface is the second NIC (index 1).
-    # We look for interfaces that are NOT lo, the first NIC, or docker/veth.
-    if [[ -n "$TRUNK_INTERFACE" ]]; then
-        return
-    fi
-
-    # List all non-loopback, non-virtual interfaces sorted by name
+detect_bm_interfaces() {
+    # Detect bare metal network interfaces (all NICs after the first one).
+    # The first NIC is mgmt; the rest are BM links (one per node).
     local interfaces
     interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
         grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
 
-    # Take the second one (first is mgmt, second is trunk)
-    TRUNK_INTERFACE=$(echo "$interfaces" | sed -n '2p')
+    # Skip the first (mgmt) interface
+    BM_INTERFACES=()
+    local idx=0
+    while IFS= read -r iface; do
+        if [[ $idx -gt 0 ]]; then
+            BM_INTERFACES+=("$iface")
+        fi
+        idx=$((idx + 1))
+    done <<< "$interfaces"
 
-    if [[ -z "$TRUNK_INTERFACE" ]]; then
-        fail "Cannot auto-detect trunk interface. Set TRUNK_INTERFACE manually."
+    if [[ ${#BM_INTERFACES[@]} -eq 0 ]]; then
+        fail "No bare metal network interfaces detected. Expected N NICs after mgmt."
     fi
-    info "Auto-detected trunk interface: $TRUNK_INTERFACE"
+    info "Detected ${#BM_INTERFACES[@]} BM interface(s): ${BM_INTERFACES[*]}"
 }
 
 # =============================================================================
@@ -84,7 +84,22 @@ detect_trunk_interface() {
 
 info "Installing prerequisites..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq git python3 python3-pip sshpass net-tools >/dev/null 2>&1
+sudo apt-get install -y -qq \
+    git python3 python3-pip sshpass net-tools \
+    qemu-kvm qemu-utils libvirt-daemon-system bridge-utils \
+    >/dev/null 2>&1
+
+# Verify nested virt or KVM is available
+if [[ -e /dev/kvm ]]; then
+    pass "KVM available (nested virtualization supported)"
+else
+    info "KVM not available -- Cisco 9k will run under QEMU TCG (slow)"
+fi
+
+# Verify the 9k image exists
+if [[ ! -f "$SWITCH_IMAGE" ]]; then
+    fail "Cisco 9k QCOW2 not found at $SWITCH_IMAGE. SCP it to the VM first."
+fi
 
 # =============================================================================
 # Step 2: Stack user
@@ -136,13 +151,93 @@ CLOUDSEOF
 chmod 600 ~/.config/openstack/clouds.yaml
 
 # =============================================================================
-# Step 5: Detect trunk interface
+# Step 5: Detect bare metal interfaces and set up local bridges
 # =============================================================================
 
-detect_trunk_interface
+detect_bm_interfaces
+
+info "Creating local management bridge for Cisco 9k..."
+sudo ip link add br-sw-mgmt type bridge 2>/dev/null || true
+sudo ip addr add "${SWITCH_LOCAL_GW}/24" dev br-sw-mgmt 2>/dev/null || true
+sudo ip link set br-sw-mgmt up
+
+info "Creating per-node bridges (BM NIC <-> 9k access port)..."
+for i in $(seq 0 $((${#BM_INTERFACES[@]} - 1))); do
+    br_name="br-bm-${i}"
+    bm_if="${BM_INTERFACES[$i]}"
+
+    sudo ip link add "$br_name" type bridge 2>/dev/null || true
+    sudo ip link set "$bm_if" master "$br_name" 2>/dev/null || true
+    sudo ip link set "$bm_if" up
+    sudo ip link set "$br_name" up
+
+    pass "Bridge $br_name with $bm_if"
+done
 
 # =============================================================================
-# Step 6: Generate local.conf
+# Step 6: Launch Cisco 9k locally (nested QEMU/KVM)
+# =============================================================================
+
+info "Preparing Cisco 9k disk image..."
+SWITCH_DISK="/var/lib/libvirt/images/nexus9300v.qcow2"
+sudo mkdir -p /var/lib/libvirt/images
+if [[ ! -f "$SWITCH_DISK" ]]; then
+    sudo cp "$SWITCH_IMAGE" "$SWITCH_DISK"
+fi
+
+# Build QEMU command with correct NIC ordering:
+#   NIC 0 = mgmt0 (br-sw-mgmt)
+#   NIC 1 = Ethernet1/1 (trunk -- connected to OVS brbm, set up post-stack)
+#   NIC 2..N = Ethernet1/2..N (access ports -- connected to br-bm-{0..N})
+
+QEMU_CMD="sudo qemu-system-x86_64 -name cisco-9k -daemonize"
+QEMU_CMD+=" -m 8192 -smp 2"
+QEMU_CMD+=" -drive file=${SWITCH_DISK},if=virtio,format=qcow2"
+QEMU_CMD+=" -bios /usr/share/OVMF/OVMF_CODE.fd"
+QEMU_CMD+=" -serial telnet:127.0.0.1:4000,server,nowait"
+QEMU_CMD+=" -monitor unix:/tmp/cisco9k-monitor.sock,server,nowait"
+QEMU_CMD+=" -pidfile /tmp/cisco9k.pid"
+
+# Enable KVM if available
+if [[ -e /dev/kvm ]]; then
+    QEMU_CMD+=" -enable-kvm -cpu host"
+fi
+
+# NIC 0: mgmt0 -> br-sw-mgmt
+QEMU_CMD+=" -netdev bridge,id=mgmt,br=br-sw-mgmt"
+QEMU_CMD+=" -device virtio-net-pci,netdev=mgmt,mac=52:54:00:9k:00:00"
+
+# NIC 1: Ethernet1/1 (trunk) -> tap device (added to brbm post-stack)
+# Create a persistent tap for the trunk
+sudo ip tuntap add dev tap-sw-trunk mode tap 2>/dev/null || true
+sudo ip link set tap-sw-trunk up
+QEMU_CMD+=" -netdev tap,id=trunk,ifname=tap-sw-trunk,script=no,downscript=no"
+QEMU_CMD+=" -device virtio-net-pci,netdev=trunk,mac=52:54:00:9k:01:00"
+
+# NIC 2+: Ethernet1/2+ (access ports) -> per-node bridges
+for i in $(seq 0 $((${#BM_INTERFACES[@]} - 1))); do
+    br_name="br-bm-${i}"
+    nic_idx=$((i + 2))
+    mac_suffix=$(printf "%02x" "$i")
+    QEMU_CMD+=" -netdev bridge,id=bm${i},br=${br_name}"
+    QEMU_CMD+=" -device virtio-net-pci,netdev=bm${i},mac=52:54:00:9k:${mac_suffix}:02"
+done
+
+# Check if 9k is already running
+if [[ -f /tmp/cisco9k.pid ]] && kill -0 "$(cat /tmp/cisco9k.pid)" 2>/dev/null; then
+    info "Cisco 9k already running (PID $(cat /tmp/cisco9k.pid))"
+else
+    info "Launching Cisco 9k VM (this takes 5-10 minutes to boot)..."
+    eval "$QEMU_CMD"
+    pass "Cisco 9k launched (serial console: telnet 127.0.0.1 4000)"
+fi
+
+info "The switch needs initial POAP setup via serial console."
+info "Run: telnet 127.0.0.1 4000"
+info "Then see scripts/01-configure-switch.sh for setup instructions."
+
+# =============================================================================
+# Step 7: Generate local.conf
 # =============================================================================
 
 info "Generating DevStack local.conf..."
@@ -155,8 +250,8 @@ cat > "$DEVSTACK_DIR/local.conf" <<CONFEOF
 # Architecture:
 #   - sushy-tools uses the Nova driver to manage bare metal VMs on the
 #     hosting OpenStack cloud
-#   - Cisco Nexus 9000v switch simulator (Nova instance) handles VLAN switching
-#   - DevStack's OVS connects to the switch trunk for VLAN traffic
+#   - Cisco Nexus 9000v switch simulator runs locally (nested KVM)
+#   - DevStack's OVS connects to the local switch trunk port
 # =============================================================================
 
 # ---- Ironic Plugin ----
@@ -248,7 +343,7 @@ CONFEOF
 pass "local.conf written to $DEVSTACK_DIR/local.conf"
 
 # =============================================================================
-# Step 7: Run stack.sh
+# Step 8: Run stack.sh
 # =============================================================================
 
 info "Running stack.sh (this will take 20-40 minutes)..."
@@ -258,18 +353,17 @@ cd "$DEVSTACK_DIR"
 pass "stack.sh completed"
 
 # =============================================================================
-# Step 8: Post-stack configuration
+# Step 9: Post-stack configuration
 # =============================================================================
 
 info "Applying post-stack configuration..."
 
-# 8a. Bridge the trunk interface to OVS brbm
-info "Adding trunk interface $TRUNK_INTERFACE to OVS bridge brbm..."
-sudo ovs-vsctl --may-exist add-port brbm "$TRUNK_INTERFACE"
-sudo ip link set dev "$TRUNK_INTERFACE" up
-pass "Trunk interface bridged to brbm"
+# 9a. Bridge the trunk tap to OVS brbm
+info "Adding trunk tap to OVS bridge brbm..."
+sudo ovs-vsctl --may-exist add-port brbm tap-sw-trunk
+pass "Trunk tap bridged to brbm"
 
-# 8b. Reconfigure sushy-tools for the Nova driver
+# 9b. Reconfigure sushy-tools for the Nova driver
 REDFISH_CONF="/etc/ironic/redfish/emulator.conf"
 if [[ -f "$REDFISH_CONF" ]]; then
     info "Reconfiguring sushy-tools for Nova driver..."
@@ -301,17 +395,17 @@ else
     fail "sushy-tools config not found at $REDFISH_CONF"
 fi
 
-# 8c. Configure networking-generic-switch for the Cisco 9k
+# 9c. Configure networking-generic-switch for the Cisco 9k
 info "Configuring networking-generic-switch..."
 NGS_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
 
-# Add the switch configuration
+# Add the switch configuration (uses local management IP)
 if ! sudo grep -q "genericswitch:cisco_nexus9k" "$NGS_CONF" 2>/dev/null; then
     sudo tee -a "$NGS_CONF" >/dev/null <<NGSEOF
 
 [genericswitch:cisco_nexus9k]
 device_type = netmiko_cisco_nxos
-ip = ${SWITCH_IP}
+ip = ${SWITCH_LOCAL_IP}
 username = ${SWITCH_USER}
 password = ${SWITCH_PASS}
 ngs_port_default_vlan = 1
@@ -336,6 +430,9 @@ echo "=============================================="
 pass "DevStack setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Enroll bare metal nodes: bash scripts/03-enroll-nodes.sh"
-echo "  2. Verify the deployment:   bash scripts/04-verify.sh"
+echo "  1. If not done already, configure the Cisco 9k switch:"
+echo "     telnet 127.0.0.1 4000   (serial console for POAP skip)"
+echo "     bash scripts/01-configure-switch.sh ${SWITCH_LOCAL_IP} '${SWITCH_PASS}' ${NODE_COUNT}"
+echo "  2. Enroll bare metal nodes: bash scripts/03-enroll-nodes.sh"
+echo "  3. Verify the deployment:   bash scripts/04-verify.sh"
 echo "=============================================="
