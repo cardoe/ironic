@@ -16,6 +16,16 @@ This module provides a :class:`Generator` that assembles a complete OpenAPI
 3.1 document by collecting path and component definitions registered by
 individual *resource* modules under :mod:`ironic.api.openapi.resources`.
 
+.. note::
+
+    The upstream OpenStack-wide tool for OpenAPI generation is
+    ``openstack-codegenerator`` (https://opendev.org/openstack/codegenerator).
+    That tool introspects a *running* Ironic instance and is the long-term
+    solution tracked in Launchpad bug #2086121.  This in-tree generator is a
+    lightweight complement: it imports schema modules directly and requires no
+    running service or external dependencies.  Only the resources that already
+    have complete JSON Schema coverage are included.
+
 Usage::
 
     from ironic.api.openapi import Generator

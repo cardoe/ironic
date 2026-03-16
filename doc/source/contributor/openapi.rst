@@ -12,14 +12,33 @@ linters, etc.).
 
 .. _OpenAPI 3.1: https://spec.openapis.org/oas/v3.1.0
 
+.. note::
+
+   The **long-term upstream path** for OpenStack-wide OpenAPI generation is
+   `openstack-codegenerator`_.  That project introspects a running Ironic
+   instance, reads the same decorator-attached schemas, and produces a
+   comprehensive OpenAPI document plus Rust SDK and CLI bindings.
+   Progress is tracked in `Launchpad bug #2086121`_.
+
+   The in-tree generator described on this page serves a **complementary,
+   narrower purpose**: it requires no running service and no external
+   dependencies — it works by importing the schema modules directly.  It
+   is deliberately limited to the resources that already have complete JSON
+   Schema coverage, making it useful today while the broader codegenerator
+   integration matures.
+
+.. _openstack-codegenerator: https://opendev.org/openstack/codegenerator
+.. _Launchpad bug #2086121: https://bugs.launchpad.net/ironic/+bug/2086121
+
 Overview
 --------
 
 The generator works in three layers:
 
 1. **JSON Schema definitions** (``ironic/api/schemas/v1/*.py``) –
-   microversion-aware request/response schemas already used by the API
-   validation decorators.
+   microversion-aware request/response schemas used by both the live API
+   validation decorators and this generator.  These are the **source of
+   truth** and feed into codegenerator as well.
 
 2. **Resource modules** (``ironic/api/openapi/resources/*.py``) –
    each module maps one or more URL paths to the schemas that describe
