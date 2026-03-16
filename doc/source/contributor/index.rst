@@ -70,6 +70,7 @@ primarily for developers.
   Rolling Upgrades <rolling-upgrades>
   Role Based Access Control Testing <rbac-testing>
   Metrics <metrics>
+  OpenAPI Schema Generation <openapi>
 
 Governance and Processes
 ------------------------
