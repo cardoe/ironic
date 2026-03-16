@@ -16,9 +16,30 @@ resource "openstack_images_image_v2" "cisco_9k" {
 }
 
 # =============================================================================
+# Controller Node
+#   Provides DNS, DHCP (with POAP options), and TFTP for switch auto-provisioning.
+#   NIC 0: ironic-mgmt
+# =============================================================================
+
+resource "openstack_compute_instance_v2" "controller" {
+  name        = "controller"
+  image_id    = data.openstack_images_image_v2.devstack.id
+  flavor_name = var.controller_flavor != "" ? var.controller_flavor : var.baremetal_flavor
+  key_pair    = var.key_pair_name
+
+  network {
+    port = openstack_networking_port_v2.controller_mgmt.id
+  }
+
+  metadata = {
+    role = "controller"
+  }
+}
+
+# =============================================================================
 # DevStack VM
-#   NIC 0 (eth0/ens3): ironic-mgmt (management, internet via floating IP)
-#   NIC 1 (eth1/ens4): ironic-underlay (VXLAN tunnel endpoint)
+#   NIC 0 (eth0): ironic-mgmt (management, internet via floating IP)
+#   NIC 1 (eth1): trunk to leaf01 (parent port + VLAN sub-ports)
 # =============================================================================
 
 resource "openstack_compute_instance_v2" "devstack" {
@@ -32,63 +53,202 @@ resource "openstack_compute_instance_v2" "devstack" {
     port = openstack_networking_port_v2.devstack_mgmt.id
   }
 
-  # NIC 1: underlay
+  # NIC 1: trunk to leaf01 (uses Neutron trunk port)
   network {
-    port = openstack_networking_port_v2.devstack_underlay.id
+    port = openstack_networking_port_v2.devstack_trunk_parent.id
   }
 
   metadata = {
     role = "devstack"
   }
+
+  depends_on = [openstack_networking_trunk_v2.devstack]
 }
 
 # =============================================================================
-# Cisco Nexus 9000v Simulator
-#   NIC ordering is critical - NX-OS maps NICs in order:
-#     NIC 0 = mgmt0           (management, SSH, NGS access)
-#     NIC 1 = Ethernet1/1     (underlay, routed L3 for VXLAN)
-#     NIC 2 = Ethernet1/2     (bare metal node 0, access port)
-#     NIC 3 = Ethernet1/3     (bare metal node 1, access port)
-#     ...
-#
-#   The switch can run on any host -- it does not need to be co-located
-#   with DevStack. All trunk traffic flows over VXLAN on the underlay.
+# Spine01
+#   NIC ordering (NX-OS maps in order):
+#     NIC 0 = mgmt0
+#     NIC 1 = Ethernet1/1  spine-link       -> spine02
+#     NIC 2 = Ethernet1/2  leaf01-spine01    -> leaf01
+#     NIC 3 = Ethernet1/3  leaf02-spine01    -> leaf02
 # =============================================================================
 
-resource "openstack_compute_instance_v2" "cisco_9k" {
-  name        = "cisco-nexus9k"
+resource "openstack_compute_instance_v2" "spine01" {
+  name        = "spine01"
   image_id    = openstack_images_image_v2.cisco_9k.id
   flavor_name = var.cisco_9k_flavor
   key_pair    = var.key_pair_name
 
   # NIC 0: mgmt0
   network {
-    port = openstack_networking_port_v2.switch_mgmt.id
+    port = openstack_networking_port_v2.spine01_mgmt.id
   }
 
-  # NIC 1: Ethernet1/1 (underlay for VXLAN)
+  # NIC 1: Ethernet1/1 -> spine02 (spine-link)
   network {
-    port = openstack_networking_port_v2.switch_underlay.id
+    port = openstack_networking_port_v2.interswitch_a["spine_link"].id
   }
 
-  # NIC 2+: Ethernet1/2+ (one per bare metal node)
+  # NIC 2: Ethernet1/2 -> leaf01
+  network {
+    port = openstack_networking_port_v2.interswitch_b["leaf01_spine01"].id
+  }
+
+  # NIC 3: Ethernet1/3 -> leaf02
+  network {
+    port = openstack_networking_port_v2.interswitch_b["leaf02_spine01"].id
+  }
+
+  metadata = {
+    role = "spine"
+  }
+}
+
+# =============================================================================
+# Spine02
+#   NIC ordering:
+#     NIC 0 = mgmt0
+#     NIC 1 = Ethernet1/1  spine-link       -> spine01
+#     NIC 2 = Ethernet1/2  leaf01-spine02    -> leaf01
+#     NIC 3 = Ethernet1/3  leaf02-spine02    -> leaf02
+# =============================================================================
+
+resource "openstack_compute_instance_v2" "spine02" {
+  name        = "spine02"
+  image_id    = openstack_images_image_v2.cisco_9k.id
+  flavor_name = var.cisco_9k_flavor
+  key_pair    = var.key_pair_name
+
+  # NIC 0: mgmt0
+  network {
+    port = openstack_networking_port_v2.spine02_mgmt.id
+  }
+
+  # NIC 1: Ethernet1/1 -> spine01 (spine-link)
+  network {
+    port = openstack_networking_port_v2.interswitch_b["spine_link"].id
+  }
+
+  # NIC 2: Ethernet1/2 -> leaf01
+  network {
+    port = openstack_networking_port_v2.interswitch_b["leaf01_spine02"].id
+  }
+
+  # NIC 3: Ethernet1/3 -> leaf02
+  network {
+    port = openstack_networking_port_v2.interswitch_b["leaf02_spine02"].id
+  }
+
+  metadata = {
+    role = "spine"
+  }
+}
+
+# =============================================================================
+# Leaf01
+#   NIC ordering:
+#     NIC 0 = mgmt0
+#     NIC 1 = Ethernet1/1  leaf01-spine01    -> spine01
+#     NIC 2 = Ethernet1/2  leaf01-spine02    -> spine02
+#     NIC 3 = Ethernet1/3  trunk to DevStack (Neutron trunk port)
+#     NIC 4 = Ethernet1/4  BM node 0 (access)
+#     NIC 5 = Ethernet1/5  BM node 2 (access), if exists
+#     ...
+# =============================================================================
+
+resource "openstack_compute_instance_v2" "leaf01" {
+  name        = "leaf01"
+  image_id    = openstack_images_image_v2.cisco_9k.id
+  flavor_name = var.cisco_9k_flavor
+  key_pair    = var.key_pair_name
+
+  # NIC 0: mgmt0
+  network {
+    port = openstack_networking_port_v2.leaf01_mgmt.id
+  }
+
+  # NIC 1: Ethernet1/1 -> spine01
+  network {
+    port = openstack_networking_port_v2.interswitch_a["leaf01_spine01"].id
+  }
+
+  # NIC 2: Ethernet1/2 -> spine02
+  network {
+    port = openstack_networking_port_v2.interswitch_a["leaf01_spine02"].id
+  }
+
+  # NIC 3: Ethernet1/3 -> DevStack (trunk)
+  network {
+    port = openstack_networking_port_v2.leaf01_trunk_parent.id
+  }
+
+  # NIC 4+: Ethernet1/4+ -> BM nodes (even-indexed: 0, 2, ...)
   dynamic "network" {
-    for_each = openstack_networking_port_v2.switch_bm
+    for_each = [for i in range(var.baremetal_node_count) : i if i % 2 == 0]
     content {
-      port = network.value.id
+      port = openstack_networking_port_v2.leaf_bm[network.value].id
     }
   }
 
   metadata = {
-    role = "switch-simulator"
+    role = "leaf"
+  }
+
+  depends_on = [openstack_networking_trunk_v2.leaf01]
+}
+
+# =============================================================================
+# Leaf02
+#   NIC ordering:
+#     NIC 0 = mgmt0
+#     NIC 1 = Ethernet1/1  leaf02-spine01    -> spine01
+#     NIC 2 = Ethernet1/2  leaf02-spine02    -> spine02
+#     NIC 3 = Ethernet1/3  (reserved for future trunk)
+#     NIC 4 = Ethernet1/4  BM node 1 (access)
+#     NIC 5 = Ethernet1/5  BM node 3 (access), if exists
+#     ...
+#
+#   Note: leaf02 does not have a DevStack trunk in this topology.
+#   BM traffic on leaf02 reaches DevStack via the VXLAN/EVPN fabric.
+# =============================================================================
+
+resource "openstack_compute_instance_v2" "leaf02" {
+  name        = "leaf02"
+  image_id    = openstack_images_image_v2.cisco_9k.id
+  flavor_name = var.cisco_9k_flavor
+  key_pair    = var.key_pair_name
+
+  # NIC 0: mgmt0
+  network {
+    port = openstack_networking_port_v2.leaf02_mgmt.id
+  }
+
+  # NIC 1: Ethernet1/1 -> spine01
+  network {
+    port = openstack_networking_port_v2.interswitch_a["leaf02_spine01"].id
+  }
+
+  # NIC 2: Ethernet1/2 -> spine02
+  network {
+    port = openstack_networking_port_v2.interswitch_a["leaf02_spine02"].id
+  }
+
+  # NIC 3+: Ethernet1/3+ -> BM nodes (odd-indexed: 1, 3, ...)
+  dynamic "network" {
+    for_each = [for i in range(var.baremetal_node_count) : i if i % 2 == 1]
+    content {
+      port = openstack_networking_port_v2.leaf_bm[network.value].id
+    }
+  }
+
+  metadata = {
+    role = "leaf"
   }
 }
 
 # =============================================================================
 # Bare Metal Node VMs
-#   Created by Terraform, managed by sushy-tools via the hosting cloud's Nova API.
-#   Each has a single NIC on its per-node network (connected to a switch port).
-#   Ironic will deploy to these via sushy-tools Redfish virtual media.
 # =============================================================================
 
 resource "openstack_compute_instance_v2" "bm_node" {

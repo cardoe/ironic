@@ -1,5 +1,5 @@
 #!/bin/bash
-# 04-verify.sh - Verify the Ironic + Neutron ML2 DevStack deployment
+# 04-verify.sh - Verify the Ironic + Neutron ML2 spine-leaf deployment
 #
 # Run on the DevStack VM after setup and enrollment are complete.
 
@@ -18,13 +18,14 @@ info() { echo -e "      $1"; }
 ERRORS=0
 WARNINGS=0
 
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
-SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
-DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
+LEAF01_IP="${LEAF01_IP:-192.168.32.13}"
+LEAF02_IP="${LEAF02_IP:-192.168.32.14}"
+SPINE01_IP="${SPINE01_IP:-192.168.32.11}"
+SPINE02_IP="${SPINE02_IP:-192.168.32.12}"
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 echo "=============================================="
-echo "Deployment Verification"
+echo "Spine-Leaf Deployment Verification"
 echo "=============================================="
 echo ""
 
@@ -60,7 +61,6 @@ if [[ -f "$REDFISH_CONF" ]]; then
         pass "sushy-tools configured for Nova driver"
     else
         fail "sushy-tools not configured for Nova driver"
-        info "Expected SUSHY_EMULATOR_DRIVER = 'nova' in $REDFISH_CONF"
         ERRORS=$((ERRORS + 1))
     fi
 fi
@@ -71,7 +71,7 @@ if [[ "$code" == "200" ]]; then
     systems=$(curl -s "http://localhost:$REDFISH_PORT/redfish/v1/Systems/" 2>/dev/null | \
         python3 -c "import sys,json; print(len(json.load(sys.stdin).get('Members',[])))" 2>/dev/null || echo "0")
     if [[ "$systems" -gt 0 ]]; then
-        pass "Redfish reports $systems system(s) (Nova instances on hosting cloud)"
+        pass "Redfish reports $systems system(s)"
     else
         warn "Redfish reports 0 systems - check hosting cloud credentials"
         WARNINGS=$((WARNINGS + 1))
@@ -83,55 +83,42 @@ fi
 echo ""
 
 # ---- Switch connectivity ----
-echo "--- Cisco 9k Switch ---"
-if ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null; then
-    pass "Switch reachable at $SWITCH_IP (mgmt)"
-else
-    fail "Switch not reachable at $SWITCH_IP"
-    ERRORS=$((ERRORS + 1))
-fi
-
-if timeout 5 bash -c "echo '' | nc -w2 $SWITCH_IP 22" &>/dev/null; then
-    pass "Switch SSH port open"
-else
-    warn "Switch SSH not reachable"
-    WARNINGS=$((WARNINGS + 1))
-fi
-echo ""
-
-# ---- VXLAN underlay ----
-echo "--- VXLAN Underlay ---"
-if ping -c 1 -W 2 "$SWITCH_VTEP_IP" &>/dev/null; then
-    pass "Switch VTEP reachable at $SWITCH_VTEP_IP"
-else
-    warn "Switch VTEP $SWITCH_VTEP_IP not reachable (check NX-OS loopback0 and ARP)"
-    info "If this fails, set SWITCH_UNDERLAY_MAC and re-run 02-setup-devstack.sh"
-    info "to add a static ARP entry for the VTEP IP."
-    WARNINGS=$((WARNINGS + 1))
-fi
+echo "--- Spine-Leaf Switches ---"
+for entry in \
+    "${SPINE01_IP}:spine01" \
+    "${SPINE02_IP}:spine02" \
+    "${LEAF01_IP}:leaf01" \
+    "${LEAF02_IP}:leaf02"
+do
+    ip="${entry%%:*}"
+    name="${entry#*:}"
+    if ping -c 1 -W 2 "$ip" &>/dev/null; then
+        pass "$name reachable at $ip"
+    else
+        fail "$name not reachable at $ip"
+        ERRORS=$((ERRORS + 1))
+    fi
+    if timeout 5 bash -c "echo '' | nc -w2 $ip 22" &>/dev/null; then
+        pass "$name SSH port open"
+    else
+        warn "$name SSH not reachable"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+done
 echo ""
 
 # ---- OVS Bridge ----
 echo "--- OVS Configuration ---"
 if sudo ovs-vsctl br-exists brbm 2>/dev/null; then
     pass "OVS bridge 'brbm' exists"
-    vxlan_count=$(sudo ovs-vsctl list-ports brbm 2>/dev/null | grep -c "^vxlan_" || echo "0")
-    if [[ "$vxlan_count" -gt 0 ]]; then
-        pass "$vxlan_count VXLAN tunnel port(s) on brbm"
-        # Check one VXLAN port for correct configuration
-        sample_port=$(sudo ovs-vsctl list-ports brbm | grep "^vxlan_" | head -1)
-        if [[ -n "$sample_port" ]]; then
-            remote=$(sudo ovs-vsctl get interface "$sample_port" options:remote_ip 2>/dev/null | tr -d '"')
-            if [[ "$remote" == "$SWITCH_VTEP_IP" ]]; then
-                pass "VXLAN remote_ip = $SWITCH_VTEP_IP"
-            else
-                warn "VXLAN remote_ip = $remote (expected $SWITCH_VTEP_IP)"
-                WARNINGS=$((WARNINGS + 1))
-            fi
-        fi
+    ports=$(sudo ovs-vsctl list-ports brbm 2>/dev/null)
+    # Check for trunk interface
+    trunk_if=$(echo "$ports" | grep -v -E '^(phy-|int-|patch-)' | grep -v "^$" | head -1)
+    if [[ -n "$trunk_if" ]]; then
+        pass "Trunk interface '$trunk_if' on brbm"
     else
-        fail "No VXLAN ports on brbm"
-        ERRORS=$((ERRORS + 1))
+        warn "No trunk interface detected on brbm"
+        WARNINGS=$((WARNINGS + 1))
     fi
 else
     fail "OVS bridge 'brbm' not found"
@@ -142,14 +129,14 @@ echo ""
 # ---- NGS Configuration ----
 echo "--- networking-generic-switch ---"
 NGS_CONF="/etc/neutron/plugins/ml2/ml2_conf.ini"
-if [[ -f "$NGS_CONF" ]] && sudo grep -q "genericswitch:cisco_nexus9k" "$NGS_CONF" 2>/dev/null; then
-    pass "NGS switch section found in ML2 config"
-    configured_ip=$(sudo grep -A5 "genericswitch:cisco_nexus9k" "$NGS_CONF" | grep "ip" | head -1 | awk '{print $NF}')
-    info "  Configured switch IP: $configured_ip"
-else
-    fail "NGS switch configuration not found"
-    ERRORS=$((ERRORS + 1))
-fi
+for switch in leaf01 leaf02; do
+    if [[ -f "$NGS_CONF" ]] && sudo grep -q "genericswitch:$switch" "$NGS_CONF" 2>/dev/null; then
+        pass "NGS section found for $switch"
+    else
+        fail "NGS section missing for $switch"
+        ERRORS=$((ERRORS + 1))
+    fi
+done
 echo ""
 
 # ---- Ironic Nodes ----

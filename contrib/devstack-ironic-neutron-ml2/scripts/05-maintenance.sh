@@ -1,25 +1,23 @@
 #!/bin/bash
-# 05-maintenance.sh - Maintenance operations for the DevStack environment
+# 05-maintenance.sh - Maintenance operations for the spine-leaf DevStack environment
 #
 # Usage:
 #   bash scripts/05-maintenance.sh <command>
 #
 # Commands:
-#   status    - Show status of all services and components
+#   status    - Show status of all services and switch connectivity
 #   restart   - Restart all DevStack services
 #   logs      - Tail key service logs (Ctrl+C to stop)
-#   reconnect - Re-create VXLAN tunnel ports on brbm (after reboot)
+#   reconnect - Re-add trunk interface to brbm (after reboot)
 #   redeploy  - Undeploy all instances and reset nodes to available
 
 set -uo pipefail
 
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
-SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
-DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
-UNDERLAY_PREFIX="${UNDERLAY_PREFIX:-24}"
-VLAN_START="${VLAN_START:-100}"
-VLAN_END="${VLAN_END:-150}"
-VNI_OFFSET=10000
+LEAF01_IP="${LEAF01_IP:-192.168.32.13}"
+LEAF02_IP="${LEAF02_IP:-192.168.32.14}"
+SPINE01_IP="${SPINE01_IP:-192.168.32.11}"
+SPINE02_IP="${SPINE02_IP:-192.168.32.12}"
+TRUNK_INTERFACE="${TRUNK_INTERFACE:-}"
 REDFISH_PORT="${REDFISH_PORT:-9132}"
 
 GREEN='\033[0;32m'
@@ -51,6 +49,16 @@ SERVICES=(
     "devstack@key"
 )
 
+detect_trunk_interface() {
+    if [[ -n "$TRUNK_INTERFACE" ]]; then
+        return
+    fi
+    local interfaces
+    interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
+        grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
+    TRUNK_INTERFACE=$(echo "$interfaces" | sed -n '2p')
+}
+
 cmd_status() {
     echo "=============================================="
     echo "Service Status"
@@ -66,14 +74,20 @@ cmd_status() {
 
     echo ""
     echo "--- Switch connectivity ---"
-    ping -c 1 -W 2 "$SWITCH_IP" &>/dev/null && pass "Switch mgmt at $SWITCH_IP" || warn "Switch mgmt unreachable"
-    ping -c 1 -W 2 "$SWITCH_VTEP_IP" &>/dev/null && pass "Switch VTEP at $SWITCH_VTEP_IP" || warn "Switch VTEP unreachable"
+    for entry in \
+        "${SPINE01_IP}:spine01" \
+        "${SPINE02_IP}:spine02" \
+        "${LEAF01_IP}:leaf01" \
+        "${LEAF02_IP}:leaf02"
+    do
+        ip="${entry%%:*}"
+        name="${entry#*:}"
+        ping -c 1 -W 2 "$ip" &>/dev/null && pass "$name at $ip" || warn "$name unreachable"
+    done
 
     echo ""
     echo "--- OVS brbm ports ---"
     sudo ovs-vsctl list-ports brbm 2>/dev/null || warn "brbm not found"
-    vxlan_count=$(sudo ovs-vsctl list-ports brbm 2>/dev/null | grep -c "^vxlan_" || echo "0")
-    info "$vxlan_count VXLAN tunnel port(s)"
 
     echo ""
     echo "--- Redfish API ---"
@@ -101,35 +115,19 @@ cmd_logs() {
 }
 
 cmd_reconnect() {
-    # After a VM reboot, the underlay IP and VXLAN tunnel ports may be lost.
+    # After a VM reboot, the trunk interface may need to be re-added to brbm.
 
-    info "Detecting underlay interface..."
-    local interfaces
-    interfaces=$(ip -o link show | awk -F': ' '{print $2}' | \
-        grep -v -E '^(lo|docker|veth|br-|ovs|virbr|tap)' | sort)
-    local underlay_if
-    underlay_if=$(echo "$interfaces" | sed -n '2p')
+    detect_trunk_interface
 
-    if [[ -z "$underlay_if" ]]; then
-        fail "Cannot detect underlay interface"
+    if [[ -z "$TRUNK_INTERFACE" ]]; then
+        fail "Cannot detect trunk interface. Set TRUNK_INTERFACE."
         return 1
     fi
 
-    info "Underlay interface: $underlay_if"
-    sudo ip addr add "${DEVSTACK_UNDERLAY_IP}/${UNDERLAY_PREFIX}" dev "$underlay_if" 2>/dev/null || true
-    sudo ip link set "$underlay_if" up
-    pass "Underlay IP configured"
-
-    info "Re-creating VXLAN tunnel ports on brbm..."
-    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
-        vni=$((vlan + VNI_OFFSET))
-        sudo ovs-vsctl --may-exist add-port brbm "vxlan_${vlan}" \
-            tag="${vlan}" \
-            -- set interface "vxlan_${vlan}" type=vxlan \
-            options:remote_ip="${SWITCH_VTEP_IP}" \
-            options:key="${vni}"
-    done
-    pass "VXLAN ports re-created on brbm"
+    info "Trunk interface: $TRUNK_INTERFACE"
+    sudo ip link set "$TRUNK_INTERFACE" up
+    sudo ovs-vsctl --may-exist add-port brbm "$TRUNK_INTERFACE"
+    pass "Trunk interface $TRUNK_INTERFACE re-added to brbm"
 }
 
 cmd_redeploy() {
@@ -165,7 +163,6 @@ print(len(active))
         done
     fi
 
-    # Move nodes to available
     for uuid in $(openstack baremetal node list -f value -c UUID 2>/dev/null); do
         state=$(openstack baremetal node show "$uuid" -f value -c provision_state 2>/dev/null)
         case "$state" in

@@ -1,250 +1,519 @@
 #!/bin/bash
-# 01-configure-switch.sh - Configure the Cisco Nexus 9000v switch simulator
+# 01-configure-switch.sh - Manual switch configuration (alternative to POAP)
 #
-# The Cisco 9k runs as a Nova instance on the hosting cloud. Initial
-# configuration (POAP skip, admin password) must be done via the serial
-# console. After that, this script handles SSH-based configuration including
-# VXLAN NVE setup for the trunk overlay to DevStack.
-#
-# Usage:
-#   bash scripts/01-configure-switch.sh [options]
-#
-# Options (via environment variables):
-#   SWITCH_IP          - Switch management IP (default: 172.24.5.20)
-#   SWITCH_PASS        - Admin password (default: system_s3cret!)
-#   NODE_COUNT         - Number of bare metal nodes (default: 3)
-#   SWITCH_UNDERLAY_IP - Switch underlay IP for Ethernet1/1 (default: 10.0.99.20)
-#   SWITCH_VTEP_IP     - Switch VTEP loopback IP (default: 10.0.99.120)
-#   DEVSTACK_UNDERLAY_IP - DevStack underlay IP (default: 10.0.99.10)
-#   VLAN_START         - Start of VLAN range (default: 100)
-#   VLAN_END           - End of VLAN range (default: 150)
+# Use this script if POAP auto-provisioning does not work or you need to
+# manually configure switches. For each switch, this script SSHes in and
+# applies the same configuration that POAP would deliver.
 #
 # Prerequisites:
-#   - The Cisco 9k VM must be booted and initial POAP setup completed
-#     via the serial console (see manual steps below)
+#   - Switches must have mgmt0 IP and SSH configured (manual console setup)
 #   - sshpass must be installed: apt-get install sshpass
 #
-# Manual initial setup via serial console:
-#   1. openstack console url show --serial cisco-nexus9k
-#   2. Connect to the serial console URL
-#   3. Wait for "Abort Power On Auto Provisioning" prompt (~5-10 min)
-#   4. Type: skip
-#   5. Wait for "login:" prompt (~2 min)
-#   6. Login: admin (no password)
-#   7. Run these commands:
+# Manual initial setup via serial console (per switch):
+#   1. openstack console url show --serial <switch_name>
+#   2. Wait for "Abort Power On Auto Provisioning" prompt (~5-10 min)
+#   3. Type: skip
+#   4. Wait for "login:" prompt
+#   5. Login: admin (no password)
+#   6. Run:
 #        configure
-#        username admin password system_s3cret! role network-admin
+#        username admin password <password> role network-admin
 #        int mgmt0
-#        ip address 172.24.5.20/24
+#        ip address <mgmt_ip>/24
 #        exit
 #        feature ssh
 #        exit
 #        copy run start
-#   8. Now run this script for the remaining configuration.
+#
+# Usage:
+#   bash scripts/01-configure-switch.sh [spine01|spine02|leaf01|leaf02|all]
 
 set -euo pipefail
 
-SWITCH_IP="${SWITCH_IP:-172.24.5.20}"
+# =============================================================================
+# Configuration
+# =============================================================================
+
 SWITCH_PASS="${SWITCH_PASS:-system_s3cret!}"
-NODE_COUNT="${NODE_COUNT:-3}"
 SWITCH_USER="admin"
 
-# VXLAN underlay configuration
-SWITCH_UNDERLAY_IP="${SWITCH_UNDERLAY_IP:-10.0.99.20}"
-SWITCH_VTEP_IP="${SWITCH_VTEP_IP:-10.0.99.120}"
-DEVSTACK_UNDERLAY_IP="${DEVSTACK_UNDERLAY_IP:-10.0.99.10}"
-UNDERLAY_PREFIX="${UNDERLAY_PREFIX:-24}"
+SPINE01_IP="${SPINE01_IP:-192.168.32.11}"
+SPINE02_IP="${SPINE02_IP:-192.168.32.12}"
+LEAF01_IP="${LEAF01_IP:-192.168.32.13}"
+LEAF02_IP="${LEAF02_IP:-192.168.32.14}"
 
-# VLAN range (must match DevStack local.conf TENANT_VLAN_RANGE)
+BGP_AS="${BGP_AS:-65001}"
 VLAN_START="${VLAN_START:-100}"
 VLAN_END="${VLAN_END:-150}"
-VNI_OFFSET=10000  # VNI = VLAN + VNI_OFFSET
+VNI_OFFSET=10000
+NODE_COUNT="${NODE_COUNT:-2}"
+
+# Loopback IPs
+SPINE01_LO0="10.1.0.1"
+SPINE02_LO0="10.1.0.2"
+LEAF01_LO0="10.1.0.3"
+LEAF02_LO0="10.1.0.4"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; }
-info() { echo -e "      $1"; }
+info() { echo "      $1"; }
 
-# Check for sshpass
 if ! command -v sshpass &>/dev/null; then
     fail "sshpass is required. Install with: apt-get install sshpass"
     exit 1
 fi
 
-echo "=============================================="
-echo "Cisco Nexus 9000v Switch Configuration"
-echo "=============================================="
-echo "  Switch mgmt IP:    $SWITCH_IP"
-echo "  Switch underlay:   $SWITCH_UNDERLAY_IP/$UNDERLAY_PREFIX"
-echo "  Switch VTEP:       $SWITCH_VTEP_IP"
-echo "  DevStack underlay: $DEVSTACK_UNDERLAY_IP"
-echo "  Node count:        $NODE_COUNT"
-echo "  VLAN range:        $VLAN_START-$VLAN_END"
-echo ""
-
-# Function to run a command on the switch via SSH
 switch_cmd() {
+    local ip="$1"
+    shift
     sshpass -p "$SWITCH_PASS" ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-        "$SWITCH_USER@$SWITCH_IP" "$1" 2>/dev/null
+        "$SWITCH_USER@$ip" "$@" 2>/dev/null
 }
 
-# Wait for SSH to be available
-echo "--- Waiting for switch SSH access ---"
-MAX_ATTEMPTS=60
-for i in $(seq 1 $MAX_ATTEMPTS); do
-    if sshpass -p "$SWITCH_PASS" ssh -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-        -o ConnectTimeout=5 "$SWITCH_USER@$SWITCH_IP" "show version" &>/dev/null; then
-        pass "Switch is accessible via SSH"
-        break
-    fi
-    if [[ $i -eq $MAX_ATTEMPTS ]]; then
-        fail "Cannot reach switch at $SWITCH_IP via SSH after $MAX_ATTEMPTS attempts"
-        echo ""
-        info "Complete the initial setup via serial console first."
-        info "See the manual steps in the header of this script."
+wait_for_switch() {
+    local ip="$1"
+    local name="$2"
+    echo "--- Waiting for $name ($ip) ---"
+    for i in $(seq 1 30); do
+        if sshpass -p "$SWITCH_PASS" ssh -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+            -o ConnectTimeout=5 "$SWITCH_USER@$ip" "show version" &>/dev/null; then
+            pass "$name is accessible"
+            return 0
+        fi
+        echo -n "."
+        sleep 10
+    done
+    fail "Cannot reach $name at $ip"
+    return 1
+}
+
+# =============================================================================
+# Spine01
+# =============================================================================
+
+configure_spine01() {
+    local ip="$SPINE01_IP"
+    wait_for_switch "$ip" "spine01" || return 1
+
+    info "Configuring spine01..."
+    switch_cmd "$ip" "$(cat <<'CMDS'
+configure terminal
+hostname spine01
+feature ospf
+feature bgp
+feature lldp
+
+interface loopback0
+  ip address 10.1.0.1/32
+  ip router ospf UNDERLAY area 0.0.0.0
+  exit
+
+interface Ethernet1/1
+  no switchport
+  ip address 10.1.1.1/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/2
+  no switchport
+  ip address 10.1.1.6/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/3
+  no switchport
+  ip address 10.1.1.14/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+router ospf UNDERLAY
+  router-id 10.1.0.1
+  exit
+
+router bgp 65001
+  router-id 10.1.0.1
+  address-family l2vpn evpn
+    retain route-target all
+    exit
+  neighbor 10.1.0.2
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  neighbor 10.1.0.3
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      route-reflector-client
+      exit
+    exit
+  neighbor 10.1.0.4
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      route-reflector-client
+      exit
+    exit
+  exit
+exit
+CMDS
+)"
+    switch_cmd "$ip" "copy running-config startup-config" || true
+    pass "spine01 configured"
+}
+
+# =============================================================================
+# Spine02
+# =============================================================================
+
+configure_spine02() {
+    local ip="$SPINE02_IP"
+    wait_for_switch "$ip" "spine02" || return 1
+
+    info "Configuring spine02..."
+    switch_cmd "$ip" "$(cat <<'CMDS'
+configure terminal
+hostname spine02
+feature ospf
+feature bgp
+feature lldp
+
+interface loopback0
+  ip address 10.1.0.2/32
+  ip router ospf UNDERLAY area 0.0.0.0
+  exit
+
+interface Ethernet1/1
+  no switchport
+  ip address 10.1.1.2/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/2
+  no switchport
+  ip address 10.1.1.10/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/3
+  no switchport
+  ip address 10.1.1.18/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+router ospf UNDERLAY
+  router-id 10.1.0.2
+  exit
+
+router bgp 65001
+  router-id 10.1.0.2
+  address-family l2vpn evpn
+    retain route-target all
+    exit
+  neighbor 10.1.0.1
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  neighbor 10.1.0.3
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      route-reflector-client
+      exit
+    exit
+  neighbor 10.1.0.4
+    remote-as 65001
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      route-reflector-client
+      exit
+    exit
+  exit
+exit
+CMDS
+)"
+    switch_cmd "$ip" "copy running-config startup-config" || true
+    pass "spine02 configured"
+}
+
+# =============================================================================
+# Leaf01
+# =============================================================================
+
+configure_leaf01() {
+    local ip="$LEAF01_IP"
+    wait_for_switch "$ip" "leaf01" || return 1
+
+    info "Configuring leaf01..."
+
+    # Base features and interfaces
+    switch_cmd "$ip" "$(cat <<CMDS
+configure terminal
+hostname leaf01
+feature ospf
+feature bgp
+feature lldp
+feature nv overlay
+feature vn-segment-vlan-based
+
+interface loopback0
+  ip address ${LEAF01_LO0}/32
+  ip router ospf UNDERLAY area 0.0.0.0
+  exit
+
+interface Ethernet1/1
+  no switchport
+  ip address 10.1.1.5/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/2
+  no switchport
+  ip address 10.1.1.9/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/3
+  switchport
+  switchport mode trunk
+  switchport trunk allowed vlan ${VLAN_START}-${VLAN_END}
+  spanning-tree port type edge trunk
+  lldp transmit
+  no shutdown
+  exit
+exit
+CMDS
+)"
+
+    # VLANs + VNI mappings
+    local vlan_cmds="configure terminal"
+    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+        vni=$((vlan + VNI_OFFSET))
+        vlan_cmds+="; vlan ${vlan}; vn-segment ${vni}; exit"
+    done
+    vlan_cmds+="; exit"
+    switch_cmd "$ip" "$vlan_cmds"
+
+    # NVE interface
+    local nve_cmds="configure terminal; interface nve1; no shutdown; source-interface loopback0; host-reachability protocol bgp"
+    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+        vni=$((vlan + VNI_OFFSET))
+        nve_cmds+="; member vni ${vni}; ingress-replication protocol bgp; exit"
+    done
+    nve_cmds+="; exit; exit"
+    switch_cmd "$ip" "$nve_cmds"
+
+    # OSPF + BGP
+    switch_cmd "$ip" "$(cat <<CMDS
+configure terminal
+router ospf UNDERLAY
+  router-id ${LEAF01_LO0}
+  exit
+router bgp ${BGP_AS}
+  router-id ${LEAF01_LO0}
+  address-family l2vpn evpn
+    exit
+  neighbor ${SPINE01_LO0}
+    remote-as ${BGP_AS}
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  neighbor ${SPINE02_LO0}
+    remote-as ${BGP_AS}
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  exit
+exit
+CMDS
+)"
+
+    # Access ports for even-indexed BM nodes
+    local port_num=4
+    local access_cmds="configure terminal"
+    for i in $(seq 0 $((NODE_COUNT - 1))); do
+        if (( i % 2 == 0 )); then
+            access_cmds+="; interface Ethernet1/${port_num}; switchport; switchport mode access"
+            access_cmds+="; spanning-tree port type edge; lldp transmit; no shutdown; exit"
+            port_num=$((port_num + 1))
+        fi
+    done
+    access_cmds+="; exit"
+    switch_cmd "$ip" "$access_cmds"
+
+    switch_cmd "$ip" "copy running-config startup-config" || true
+    pass "leaf01 configured"
+}
+
+# =============================================================================
+# Leaf02
+# =============================================================================
+
+configure_leaf02() {
+    local ip="$LEAF02_IP"
+    wait_for_switch "$ip" "leaf02" || return 1
+
+    info "Configuring leaf02..."
+
+    switch_cmd "$ip" "$(cat <<CMDS
+configure terminal
+hostname leaf02
+feature ospf
+feature bgp
+feature lldp
+feature nv overlay
+feature vn-segment-vlan-based
+
+interface loopback0
+  ip address ${LEAF02_LO0}/32
+  ip router ospf UNDERLAY area 0.0.0.0
+  exit
+
+interface Ethernet1/1
+  no switchport
+  ip address 10.1.1.13/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+
+interface Ethernet1/2
+  no switchport
+  ip address 10.1.1.17/30
+  ip ospf network point-to-point
+  ip router ospf UNDERLAY area 0.0.0.0
+  no shutdown
+  exit
+exit
+CMDS
+)"
+
+    # VLANs + VNI (same as leaf01)
+    local vlan_cmds="configure terminal"
+    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+        vni=$((vlan + VNI_OFFSET))
+        vlan_cmds+="; vlan ${vlan}; vn-segment ${vni}; exit"
+    done
+    vlan_cmds+="; exit"
+    switch_cmd "$ip" "$vlan_cmds"
+
+    # NVE
+    local nve_cmds="configure terminal; interface nve1; no shutdown; source-interface loopback0; host-reachability protocol bgp"
+    for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
+        vni=$((vlan + VNI_OFFSET))
+        nve_cmds+="; member vni ${vni}; ingress-replication protocol bgp; exit"
+    done
+    nve_cmds+="; exit; exit"
+    switch_cmd "$ip" "$nve_cmds"
+
+    # OSPF + BGP
+    switch_cmd "$ip" "$(cat <<CMDS
+configure terminal
+router ospf UNDERLAY
+  router-id ${LEAF02_LO0}
+  exit
+router bgp ${BGP_AS}
+  router-id ${LEAF02_LO0}
+  address-family l2vpn evpn
+    exit
+  neighbor ${SPINE01_LO0}
+    remote-as ${BGP_AS}
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  neighbor ${SPINE02_LO0}
+    remote-as ${BGP_AS}
+    update-source loopback0
+    address-family l2vpn evpn
+      send-community extended
+      exit
+    exit
+  exit
+exit
+CMDS
+)"
+
+    # Access ports for odd-indexed BM nodes
+    local port_num=3
+    local access_cmds="configure terminal"
+    for i in $(seq 0 $((NODE_COUNT - 1))); do
+        if (( i % 2 == 1 )); then
+            access_cmds+="; interface Ethernet1/${port_num}; switchport; switchport mode access"
+            access_cmds+="; spanning-tree port type edge; lldp transmit; no shutdown; exit"
+            port_num=$((port_num + 1))
+        fi
+    done
+    access_cmds+="; exit"
+    switch_cmd "$ip" "$access_cmds"
+
+    switch_cmd "$ip" "copy running-config startup-config" || true
+    pass "leaf02 configured"
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
+TARGET="${1:-all}"
+
+echo "=============================================="
+echo "Spine-Leaf Switch Configuration"
+echo "=============================================="
+echo ""
+
+case "$TARGET" in
+    spine01) configure_spine01 ;;
+    spine02) configure_spine02 ;;
+    leaf01)  configure_leaf01 ;;
+    leaf02)  configure_leaf02 ;;
+    all)
+        configure_spine01
+        configure_spine02
+        configure_leaf01
+        configure_leaf02
+        ;;
+    *)
+        echo "Usage: $0 {spine01|spine02|leaf01|leaf02|all}"
         exit 1
-    fi
-    echo -n "."
-    sleep 10
-done
-echo ""
-
-# =========================================================================
-# Configure features and underlay
-# =========================================================================
-
-echo "--- Enabling features ---"
-CONFIG_CMDS="configure terminal"
-CONFIG_CMDS+="; feature lldp"
-CONFIG_CMDS+="; feature nv overlay"
-CONFIG_CMDS+="; feature vn-segment-vlan-based"
-CONFIG_CMDS+="; exit"
-
-switch_cmd "$CONFIG_CMDS"
-pass "Features enabled (lldp, nv overlay, vn-segment-vlan-based)"
-
-echo "--- Configuring underlay interface (Ethernet1/1) ---"
-CONFIG_CMDS="configure terminal"
-CONFIG_CMDS+="; interface Ethernet1/1"
-CONFIG_CMDS+="; no switchport"
-CONFIG_CMDS+="; ip address ${SWITCH_UNDERLAY_IP}/${UNDERLAY_PREFIX}"
-CONFIG_CMDS+="; no shutdown"
-CONFIG_CMDS+="; exit"
-
-# VTEP loopback
-CONFIG_CMDS+="; interface loopback0"
-CONFIG_CMDS+="; ip address ${SWITCH_VTEP_IP}/32"
-CONFIG_CMDS+="; exit"
-
-CONFIG_CMDS+="; exit"
-switch_cmd "$CONFIG_CMDS"
-pass "Underlay: Ethernet1/1 ${SWITCH_UNDERLAY_IP}/${UNDERLAY_PREFIX}, loopback0 ${SWITCH_VTEP_IP}/32"
-
-# =========================================================================
-# Configure VLANs with VNI mappings
-# =========================================================================
-
-echo "--- Configuring VLANs and VNI mappings ---"
-CONFIG_CMDS="configure terminal"
-for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
-    vni=$((vlan + VNI_OFFSET))
-    CONFIG_CMDS+="; vlan ${vlan}"
-    CONFIG_CMDS+="; vn-segment ${vni}"
-    CONFIG_CMDS+="; exit"
-done
-CONFIG_CMDS+="; exit"
-
-switch_cmd "$CONFIG_CMDS"
-pass "VLANs ${VLAN_START}-${VLAN_END} mapped to VNIs $((VLAN_START + VNI_OFFSET))-$((VLAN_END + VNI_OFFSET))"
-
-# =========================================================================
-# Configure NVE (VXLAN tunnel endpoint)
-# =========================================================================
-
-echo "--- Configuring NVE interface ---"
-CONFIG_CMDS="configure terminal"
-CONFIG_CMDS+="; interface nve1"
-CONFIG_CMDS+="; no shutdown"
-CONFIG_CMDS+="; source-interface loopback0"
-
-# Add VNI members with static ingress-replication to DevStack
-for vlan in $(seq "$VLAN_START" "$VLAN_END"); do
-    vni=$((vlan + VNI_OFFSET))
-    CONFIG_CMDS+="; member vni ${vni}"
-    CONFIG_CMDS+="; ingress-replication protocol static"
-    CONFIG_CMDS+="; peer-ip ${DEVSTACK_UNDERLAY_IP}"
-    CONFIG_CMDS+="; exit"
-done
-
-CONFIG_CMDS+="; exit"  # exit interface nve1
-CONFIG_CMDS+="; exit"  # exit configure terminal
-
-switch_cmd "$CONFIG_CMDS"
-pass "NVE1 configured: source loopback0, peer ${DEVSTACK_UNDERLAY_IP}"
-
-# =========================================================================
-# Configure access ports for bare metal nodes
-# =========================================================================
-
-echo "--- Configuring access ports ---"
-CONFIG_CMDS="configure terminal"
-
-# Configure per-node access ports (Ethernet1/2 through Ethernet1/{N+1})
-for i in $(seq 0 $((NODE_COUNT - 1))); do
-    port_num=$((i + 2))
-    CONFIG_CMDS+="; interface Ethernet1/$port_num"
-    CONFIG_CMDS+="; switchport"
-    CONFIG_CMDS+="; switchport mode access"
-    CONFIG_CMDS+="; no shutdown"
-    CONFIG_CMDS+="; lldp transmit"
-    CONFIG_CMDS+="; exit"
-done
-
-CONFIG_CMDS+="; exit"
-
-switch_cmd "$CONFIG_CMDS"
-pass "Access ports Ethernet1/2 - Ethernet1/$((NODE_COUNT + 1)) configured"
-
-# =========================================================================
-# Save
-# =========================================================================
-
-switch_cmd "copy running-config startup-config" || true
-pass "Configuration saved"
+        ;;
+esac
 
 echo ""
-echo "--- Verifying configuration ---"
-
-echo "Interface status:"
-switch_cmd "show interface status" || true
-echo ""
-
-echo "NVE peers:"
-switch_cmd "show nve peers" || true
-echo ""
-
-echo "NVE VNI summary:"
-switch_cmd "show nve vni summary" || true
-echo ""
-
-echo "VXLAN info:"
-switch_cmd "show vxlan" || true
-echo ""
-
-pass "Switch configuration complete"
-echo ""
-info "Switch is ready. Key details:"
-info "  Management IP:   $SWITCH_IP"
-info "  Underlay IP:     $SWITCH_UNDERLAY_IP (Ethernet1/1)"
-info "  VTEP IP:         $SWITCH_VTEP_IP (loopback0)"
-info "  VXLAN peer:      $DEVSTACK_UNDERLAY_IP (DevStack)"
-info "  VNI range:       $((VLAN_START + VNI_OFFSET))-$((VLAN_END + VNI_OFFSET))"
-info "  Access ports:    Ethernet1/2 - Ethernet1/$((NODE_COUNT + 1))"
-info "  SSH access:      ssh $SWITCH_USER@$SWITCH_IP"
+pass "Switch configuration complete for: $TARGET"

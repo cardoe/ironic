@@ -25,7 +25,7 @@ variable "devstack_flavor" {
 }
 
 variable "cisco_9k_flavor" {
-  description = "Flavor for the Cisco 9k simulator VM (needs 2 vCPU, 8+ GB RAM)"
+  description = "Flavor for the Cisco 9k simulator VMs (needs 2 vCPU, 8+ GB RAM)"
   type        = string
 }
 
@@ -34,10 +34,21 @@ variable "baremetal_flavor" {
   type        = string
 }
 
+variable "controller_flavor" {
+  description = "Flavor for the controller node (DNS, DHCP, TFTP for POAP)"
+  type        = string
+  default     = ""
+}
+
 variable "baremetal_node_count" {
-  description = "Number of virtual bare metal nodes to create"
+  description = <<-EOT
+    Number of virtual bare metal nodes to create.
+    Nodes are distributed across leaf switches:
+      - Even-indexed nodes (0, 2, ...) attach to leaf01
+      - Odd-indexed nodes (1, 3, ...) attach to leaf02
+  EOT
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "key_pair_name" {
@@ -51,51 +62,55 @@ variable "dns_nameservers" {
   default     = ["8.8.8.8", "8.8.4.4"]
 }
 
+# =============================================================================
+# Management network
+# =============================================================================
+
 variable "mgmt_subnet_cidr" {
   description = "CIDR for the management network"
   type        = string
-  default     = "172.24.5.0/24"
+  default     = "192.168.32.0/24"
 }
 
-variable "underlay_subnet_cidr" {
-  description = "CIDR for the VXLAN underlay network between DevStack and switches"
+variable "controller_mgmt_ip" {
+  description = "Controller node IP on the management network"
   type        = string
-  default     = "10.0.99.0/24"
+  default     = "192.168.32.254"
 }
 
-variable "switch_mgmt_ip" {
-  description = "Fixed IP for the Cisco 9k switch on the management network"
+variable "spine01_mgmt_ip" {
+  description = "Spine01 IP on the management network"
   type        = string
-  default     = "172.24.5.20"
+  default     = "192.168.32.11"
+}
+
+variable "spine02_mgmt_ip" {
+  description = "Spine02 IP on the management network"
+  type        = string
+  default     = "192.168.32.12"
+}
+
+variable "leaf01_mgmt_ip" {
+  description = "Leaf01 IP on the management network"
+  type        = string
+  default     = "192.168.32.13"
+}
+
+variable "leaf02_mgmt_ip" {
+  description = "Leaf02 IP on the management network"
+  type        = string
+  default     = "192.168.32.14"
 }
 
 variable "devstack_mgmt_ip" {
-  description = "Fixed IP for the DevStack VM on the management network"
+  description = "DevStack VM IP on the management network"
   type        = string
-  default     = "172.24.5.10"
+  default     = "192.168.32.20"
 }
 
-variable "switch_underlay_ip" {
-  description = "Fixed IP for the Cisco 9k on the underlay network (Ethernet1/1)"
-  type        = string
-  default     = "10.0.99.20"
-}
-
-variable "switch_vtep_ip" {
-  description = <<-EOT
-    VTEP IP for the Cisco 9k (loopback0, NVE source-interface).
-    Must be in the underlay subnet so DevStack can reach it via the
-    underlay network without routing.
-  EOT
-  type        = string
-  default     = "10.0.99.120"
-}
-
-variable "devstack_underlay_ip" {
-  description = "Fixed IP for the DevStack VM on the underlay network"
-  type        = string
-  default     = "10.0.99.10"
-}
+# =============================================================================
+# VLAN range
+# =============================================================================
 
 variable "vlan_range_start" {
   description = "Start of the VLAN range for tenant networks (must match DevStack local.conf)"
@@ -109,8 +124,12 @@ variable "vlan_range_end" {
   default     = 150
 }
 
+# =============================================================================
+# Switch credentials
+# =============================================================================
+
 variable "switch_password" {
-  description = "Admin password to configure on the Cisco 9k switch"
+  description = "Admin password to configure on all Cisco 9k switches"
   type        = string
   default     = "system_s3cret!"
   sensitive   = true
