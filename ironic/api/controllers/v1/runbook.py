@@ -24,7 +24,10 @@ from ironic.api.controllers import link
 from ironic.api.controllers.v1 import collection
 from ironic.api.controllers.v1 import notification_utils as notify
 from ironic.api.controllers.v1 import utils as api_utils
+from ironic.api.controllers.v1 import versions
 from ironic.api import method
+from ironic.api.schemas.v1 import runbook as schema
+from ironic.api import validation
 from ironic.common import args
 from ironic.common import exception
 from ironic.common.i18n import _
@@ -147,6 +150,9 @@ class RunbooksController(rest.RestController):
     @args.validate(marker=args.name, limit=args.integer, sort_key=args.string,
                    sort_dir=args.string, fields=args.string_list,
                    detail=args.boolean, project=args.boolean)
+    @validation.api_version(min_version=versions.MINOR_92_RUNBOOKS)
+    @validation.request_query_schema(schema.index_request_query)
+    @validation.response_body_schema(schema.index_response_body)
     def get_all(self, marker=None, limit=None, sort_key='id', sort_dir='asc',
                 fields=None, detail=None, project=None):
         """Retrieve a list of runbooks.
@@ -208,6 +214,10 @@ class RunbooksController(rest.RestController):
     @METRICS.timer('RunbooksController.get_one')
     @method.expose()
     @args.validate(runbook_ident=args.uuid_or_name, fields=args.string_list)
+    @validation.api_version(min_version=versions.MINOR_92_RUNBOOKS)
+    @validation.request_parameter_schema(schema.show_request_parameter)
+    @validation.request_query_schema(schema.show_request_query)
+    @validation.response_body_schema(schema.show_response_body)
     def get_one(self, runbook_ident, fields=None):
         """Retrieve information about the given runbook.
 
@@ -234,6 +244,12 @@ class RunbooksController(rest.RestController):
     @method.expose(status_code=http_client.CREATED)
     @method.body('runbook')
     @args.validate(runbook=RUNBOOK_VALIDATOR)
+    @validation.api_version(
+        min_version=versions.MINOR_92_RUNBOOKS,
+        exception_class=webob_exc.HTTPMethodNotAllowed,
+    )
+    @validation.request_body_schema(schema.create_request_body)
+    @validation.response_body_schema(schema.create_response_body)
     def post(self, runbook):
         """Create a new runbook.
 
@@ -313,6 +329,13 @@ class RunbooksController(rest.RestController):
     @method.expose()
     @method.body('patch')
     @args.validate(runbook_ident=args.uuid_or_name, patch=args.patch)
+    @validation.api_version(
+        min_version=versions.MINOR_92_RUNBOOKS,
+        exception_class=webob_exc.HTTPMethodNotAllowed,
+    )
+    @validation.request_parameter_schema(schema.update_request_parameter)
+    @validation.request_body_schema(schema.update_request_body)
+    @validation.response_body_schema(schema.update_response_body)
     def patch(self, runbook_ident, patch=None):
         """Update an existing runbook.
 
@@ -372,6 +395,11 @@ class RunbooksController(rest.RestController):
     @METRICS.timer('RunbooksController.delete')
     @method.expose(status_code=http_client.NO_CONTENT)
     @args.validate(runbook_ident=args.uuid_or_name)
+    @validation.api_version(
+        min_version=versions.MINOR_92_RUNBOOKS,
+        exception_class=webob_exc.HTTPMethodNotAllowed,
+    )
+    @validation.request_parameter_schema(schema.delete_request_parameter)
     def delete(self, runbook_ident):
         """Delete a runbook.
 

@@ -1124,3 +1124,76 @@ class TestDelete(BaseRunbooksAPITest):
         res = self.delete('/runbooks/%s' % 'blah', expect_errors=True,
                           headers=self.headers)
         self.assertEqual(http_client.NOT_FOUND, res.status_code)
+
+
+class TestSchemas(BaseRunbooksAPITest):
+    """Verify schema decorators are registered on RunbooksController methods."""
+
+    def setUp(self):
+        super(TestSchemas, self).setUp()
+        from ironic.api.controllers.v1 import runbook as rb_module
+        self.controller = rb_module.RunbooksController()
+
+    def test_get_all_schemas_registered(self):
+        self.assertTrue(
+            hasattr(self.controller.get_all, 'request_query_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.get_all, 'response_body_schemas'))
+
+    def test_get_one_schemas_registered(self):
+        self.assertTrue(
+            hasattr(self.controller.get_one, 'request_parameter_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.get_one, 'request_query_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.get_one, 'response_body_schemas'))
+
+    def test_post_schemas_registered(self):
+        self.assertTrue(
+            hasattr(self.controller.post, 'request_body_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.post, 'response_body_schemas'))
+
+    def test_patch_schemas_registered(self):
+        self.assertTrue(
+            hasattr(self.controller.patch, 'request_parameter_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.patch, 'request_body_schemas'))
+        self.assertTrue(
+            hasattr(self.controller.patch, 'response_body_schemas'))
+
+    def test_delete_schemas_registered(self):
+        self.assertTrue(
+            hasattr(self.controller.delete, 'request_parameter_schemas'))
+
+    def test_get_all_invalid_sort_dir(self):
+        obj_utils.create_test_runbook(self.context)
+        response = self.get_json(
+            '/runbooks?sort_dir=invalid',
+            headers=self.headers,
+            expect_errors=True)
+        self.assertEqual(http_client.BAD_REQUEST, response.status_int)
+
+    def test_get_one_response_body_schema(self):
+        """Verify response matches schema when response_validation='error'."""
+        self.config(response_validation='error', group='api')
+        runbook = obj_utils.create_test_runbook(self.context)
+        data = self.get_json('/runbooks/%s' % runbook.uuid,
+                             headers=self.headers)
+        self.assertEqual(runbook.uuid, data['uuid'])
+
+    def test_get_all_response_body_schema(self):
+        """Verify list response matches schema when response_validation='error'.
+        """
+        self.config(response_validation='error', group='api')
+        obj_utils.create_test_runbook(self.context)
+        data = self.get_json('/runbooks', headers=self.headers)
+        self.assertIn('runbooks', data)
+
+    def test_post_response_body_schema(self):
+        """Verify create response matches schema when response_validation='error'.
+        """
+        self.config(response_validation='error', group='api')
+        tdict = test_api_utils.post_get_test_runbook()
+        response = self.post_json('/runbooks', tdict, headers=self.headers)
+        self.assertEqual(http_client.CREATED, response.status_int)
