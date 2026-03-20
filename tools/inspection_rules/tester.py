@@ -25,6 +25,8 @@ import yaml
 from ironic.common.inspection_rules import actions
 from ironic.common.inspection_rules import engine
 
+_MISSING = object()
+
 
 class FakeNode:
     """Fake node built from 'openstack baremetal node show' output."""
@@ -44,22 +46,27 @@ class FakeTask:
     def __init__(self, node):
         self.node = node
         self.context = None
+        self.ports = []
 
 
 class InspectionRulesEvaluator:
     """Evaluator for testing inspection rules against hardware inventory."""
 
     def __init__(
-        self, node_file, inventory_file, rules_file, json_output=False
+        self, node_file, inventory_file, rules_file,
+        expected_file=None, json_output=False
     ):
         self.rules_file = rules_file
         self.inventory_file = inventory_file
         self.node_file = node_file
+        self.expected_file = expected_file
         self.json_output = json_output
         self.rules = []
         self.inventory = {}
         self.plugin_data = {}
         self.node_data = {}
+        self.node = None
+        self.expected = {}
         self.results = []
 
     def _load_file(self, ftype, fname):
@@ -105,17 +112,30 @@ class InspectionRulesEvaluator:
             return False
         return True
 
+    def load_expected(self):
+        """Load expected results from YAML file."""
+        try:
+            self.expected = self._load_file("expected", self.expected_file)
+        except Exception as e:
+            print(f"{e}", file=sys.stderr)
+            return False
+        if not isinstance(self.expected, dict):
+            print("Expected file must be a YAML mapping", file=sys.stderr)
+            return False
+        return True
+
     def evaluate_rules(self):
-        """Evaluate inspection rules against the loaded inventory."""
+        """Evaluate and apply inspection rules against the loaded inventory."""
         node = FakeNode(self.node_data)
         task = FakeTask(node)
         sorted_rules = sorted(
             self.rules, key=lambda r: r.get("priority", 0), reverse=True)
         self.results = [self._evaluate_single_rule(task, rule)
                         for rule in sorted_rules]
+        self.node = node
 
     def _evaluate_single_rule(self, task, rule):
-        """Evaluate a single rule and return a result dict."""
+        """Evaluate and apply a single rule, returning a result dict."""
         result = {
             "uuid": rule.get("uuid"),
             "description": rule.get("description", "No description"),
@@ -159,37 +179,104 @@ class InspectionRulesEvaluator:
 
         if result["matched"]:
             for idx, action in enumerate(rule["actions"], 1):
+                op = action["op"]
+                entry = {"index": idx, "op": op,
+                         "args": action.get("args", {})}
                 try:
-                    action_class = actions.get_action(action["op"])
-                    action_obj = action_class()
-
-                    loop_items = action.get("loop", [])
-                    if isinstance(loop_items, dict):
-                        processed_args = action_obj._process_args(
-                            task, action, masked_inventory, masked_plugin_data,
-                            {"item": loop_items})
-                        result["actions"].append(
-                            {"index": idx, "op": action["op"],
-                             "args": processed_args, "loop_index": 1})
-                    elif isinstance(loop_items, list) and loop_items:
-                        for loop_index, item in enumerate(loop_items, 1):
-                            processed_args = action_obj._process_args(
-                                task, action, masked_inventory,
-                                masked_plugin_data, {"item": item})
-                            result["actions"].append(
-                                {"index": idx, "op": action["op"],
-                                 "args": processed_args,
-                                 "loop_index": loop_index})
-                    else:
-                        processed_args = action_obj._process_args(
+                    action_obj = actions.get_action(op)()
+                    if action.get("loop"):
+                        action_obj.execute_with_loop(
                             task, action, masked_inventory, masked_plugin_data)
-                        result["actions"].append(
-                            {"index": idx, "op": action["op"],
-                             "args": processed_args})
+                    else:
+                        action_obj.execute_action(
+                            task, action, masked_inventory, masked_plugin_data)
                 except Exception as e:
                     result["errors"].append(str(e))
+                result["actions"].append(entry)
 
         return result
+
+    def _check_partial(self, expected, actual, path):
+        """Recursively check that all expected keys/values are present."""
+        failures = []
+        if isinstance(expected, dict):
+            if not isinstance(actual, dict):
+                failures.append(
+                    f"  {path}: expected a mapping, "
+                    f"got {type(actual).__name__}")
+                return failures
+            for key, exp_val in expected.items():
+                if key not in actual:
+                    failures.append(
+                        f"  {path}.{key}: expected {exp_val!r}, "
+                        f"key not present")
+                else:
+                    failures.extend(
+                        self._check_partial(
+                            exp_val, actual[key], f"{path}.{key}"))
+        else:
+            if expected != actual:
+                failures.append(
+                    f"  {path}: expected {expected!r}, got {actual!r}")
+        return failures
+
+    def _find_rule_result(self, rule_exp):
+        """Find a rule result by uuid or description."""
+        if "uuid" in rule_exp:
+            for r in self.results:
+                if r["uuid"] == rule_exp["uuid"]:
+                    return r
+        if "description" in rule_exp:
+            for r in self.results:
+                if r["description"] == rule_exp["description"]:
+                    return r
+        return None
+
+    def validate(self):
+        """Validate results against expected.yaml.
+
+        Returns a list of failure message strings; empty means all passed.
+        """
+        failures = []
+
+        if "matched_rules" in self.expected:
+            matched = sum(1 for r in self.results if r["matched"])
+            exp = self.expected["matched_rules"]
+            if matched != exp:
+                failures.append(
+                    f"matched_rules: expected {exp}, got {matched}")
+
+        if "errors" in self.expected:
+            errors = sum(len(r["errors"]) for r in self.results)
+            exp = self.expected["errors"]
+            if errors != exp:
+                failures.append(f"errors: expected {exp}, got {errors}")
+
+        for rule_exp in self.expected.get("rules", []):
+            identifier = rule_exp.get(
+                "uuid") or rule_exp.get("description", "<unknown>")
+            rule_result = self._find_rule_result(rule_exp)
+            if rule_result is None:
+                failures.append(f"rule {identifier!r}: not found in results")
+                continue
+            if ("matched" in rule_exp
+                    and rule_result["matched"] != rule_exp["matched"]):
+                failures.append(
+                    f"rule {identifier!r}: "
+                    f"matched={rule_result['matched']}, "
+                    f"expected {rule_exp['matched']}")
+
+        for attr, exp_val in self.expected.get("node", {}).items():
+            act_val = getattr(self.node, attr, _MISSING)
+            if act_val is _MISSING:
+                failures.append(
+                    f"node.{attr}: expected {exp_val!r}, "
+                    f"attribute not present")
+            else:
+                failures.extend(
+                    self._check_partial(exp_val, act_val, f"node.{attr}"))
+
+        return failures
 
     def print_results(self):
         """Print all results in human-readable form."""
@@ -228,6 +315,10 @@ class InspectionRulesEvaluator:
 
     def output_json(self):
         """Output results in JSON format."""
+        node_state = {
+            k: v for k, v in vars(self.node).items()
+            if not k.startswith("_")
+        } if self.node else {}
         output = {
             "summary": {
                 "total_rules": len(self.results),
@@ -235,9 +326,9 @@ class InspectionRulesEvaluator:
                 "total_errors": sum(len(r["errors"]) for r in self.results),
             },
             "rules": self.results,
+            "node": node_state,
             "inventory": self.inventory,
             "plugin_data": self.plugin_data,
-            "node": self.node_data,
         }
         print(json.dumps(output, indent=2, default=str))
 
@@ -249,6 +340,8 @@ class InspectionRulesEvaluator:
             return 1
         if not self.load_node():
             return 1
+        if self.expected_file and not self.load_expected():
+            return 1
         self.evaluate_rules()
         errors = sum(len(r["errors"]) for r in self.results)
         if self.json_output:
@@ -256,6 +349,13 @@ class InspectionRulesEvaluator:
         else:
             self.print_results()
             if errors:
+                return 1
+        if self.expected_file:
+            failures = self.validate()
+            if failures:
+                print("\nValidation FAILED:", file=sys.stderr)
+                for msg in failures:
+                    print(msg, file=sys.stderr)
                 return 1
         return 0
 
@@ -276,6 +376,9 @@ Examples:
   openstack baremetal node inventory save --file inventory.json <node-id>
   %(prog)s node.yaml inventory.json rules.yaml
 
+  # Validate results against expected outcomes
+  %(prog)s node.yaml inventory.json rules.yaml --expected expected.yaml
+
   # JSON output for automation
   %(prog)s --json node.yaml inventory.json rules.yaml > results.json
         """,
@@ -295,6 +398,12 @@ Examples:
         "rules_file", help="YAML file containing inspection rules"
     )
     parser.add_argument(
+        "--expected",
+        metavar="FILE",
+        help="YAML file describing expected outcomes; if provided, the tester "
+             "validates results and exits non-zero on any mismatch"
+    )
+    parser.add_argument(
         "--json", action="store_true", help="Output results in JSON format"
     )
 
@@ -304,6 +413,7 @@ Examples:
         args.node_file,
         args.inventory_file,
         args.rules_file,
+        expected_file=args.expected,
         json_output=args.json,
     )
 

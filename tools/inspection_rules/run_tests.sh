@@ -16,6 +16,8 @@
 #   node.yaml or node.json       - baremetal node data
 #   inventory.yaml or inventory.json - hardware inventory and plugin data
 #   rules.yaml                   - inspection rules to evaluate
+# Optionally:
+#   expected.yaml                - expected outcomes for validation
 
 set -o pipefail
 
@@ -79,8 +81,14 @@ for test_dir in "${test_dirs[@]}"; do
         continue
     fi
 
+    # Build tester command, optionally adding --expected
+    tester_cmd=(python "$TESTER" "$node_file" "$inventory_file" "$rules_file")
+    if [ -f "$test_dir/expected.yaml" ]; then
+        tester_cmd+=(--expected "$test_dir/expected.yaml")
+    fi
+
     echo "Running: $test_name"
-    if python "$TESTER" "$node_file" "$inventory_file" "$rules_file"; then
+    if "${tester_cmd[@]}"; then
         echo "PASS: $test_name"
         PASS=$((PASS + 1))
     else
