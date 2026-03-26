@@ -39,11 +39,67 @@ METRICS = metrics_utils.get_metrics_logger(__name__)
 
 DEFAULT_RETURN_FIELDS = ['uuid', 'name']
 
+# JSON schema for the runbook name when API version >= 1.112.
+# Names must still be valid RFC 3986 unreserved-character strings so that they
+# can be resolved by name in URL paths (ALPHA / DIGIT / "-" / "." / "_" / "~").
+RUNBOOK_NAME_SCHEMA = {
+    'type': 'string',
+    'minLength': 1,
+    'maxLength': 255,
+    'pattern': r'^[A-Za-z0-9\-._~]+$',
+}
+
 RUNBOOK_SCHEMA = {
     'type': 'object',
     'properties': {
         'uuid': {'type': ['string', 'null']},
         'name': api_utils.TRAITS_SCHEMA,
+        'steps': {
+            'type': 'array',
+            'items': api_utils.RUNBOOK_STEP_SCHEMA,
+            'minItems': 1},
+        'disable_ramdisk': {'type': ['boolean', 'null']},
+        'extra': {'type': ['object', 'null']},
+        'public': {'type': ['boolean', 'null']},
+        'owner': {'type': ['string', 'null'], 'maxLength': 255}
+    },
+    'required': ['steps', 'name'],
+    'additionalProperties': False,
+}
+
+# Schema for API version >= 1.112: name may be any logical string, and
+# a 'traits' list is accepted.
+RUNBOOK_SCHEMA_V112 = {
+    'type': 'object',
+    'properties': {
+        'uuid': {'type': ['string', 'null']},
+        'name': RUNBOOK_NAME_SCHEMA,
+        'description': {'type': ['string', 'null'], 'maxLength': 255},
+        'traits': {
+            'type': 'array',
+            'items': api_utils.TRAITS_SCHEMA,
+        },
+        'steps': {
+            'type': 'array',
+            'items': api_utils.RUNBOOK_STEP_SCHEMA,
+            'minItems': 1},
+        'disable_ramdisk': {'type': ['boolean', 'null']},
+        'extra': {'type': ['object', 'null']},
+        'public': {'type': ['boolean', 'null']},
+        'owner': {'type': ['string', 'null'], 'maxLength': 255}
+    },
+    'required': ['steps', 'name'],
+    'additionalProperties': False,
+}
+
+# Schema used when validating PATCH bodies for v1.112+.  Traits are not
+# patchable via this endpoint (use the /traits sub-resource instead), so
+# 'traits' is intentionally absent from the properties here.
+RUNBOOK_PATCH_SCHEMA_V112 = {
+    'type': 'object',
+    'properties': {
+        'uuid': {'type': ['string', 'null']},
+        'name': RUNBOOK_NAME_SCHEMA,
         'description': {'type': ['string', 'null'], 'maxLength': 255},
         'steps': {
             'type': 'array',
@@ -58,32 +114,66 @@ RUNBOOK_SCHEMA = {
     'additionalProperties': False,
 }
 
-PATCH_ALLOWED_FIELDS = [
+# Schema for trait body on PUT /runbooks/{ident}/traits
+RUNBOOK_TRAITS_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'traits': {
+            'type': 'array',
+            'items': api_utils.TRAITS_SCHEMA
+        },
+    },
+    'additionalProperties': False,
+}
+
+_PATCH_ALLOWED_FIELDS_BASE = [
     'extra',
     'name',
-    'steps',
-    'description',
+    'owner',
     'public',
-    'owner'
+    'steps',
 ]
+# 'description' is only patchable in API version >= 1.112.
 STEP_PATCH_ALLOWED_FIELDS = ['args', 'interface', 'order', 'step']
 
 
-RUNBOOK_VALIDATOR = args.and_valid(
-    args.schema(RUNBOOK_SCHEMA),
-    api_utils.duplicate_steps,
-    args.dict_valid(uuid=args.uuid)
-)
+def _get_patch_allowed_fields():
+    if api_utils.allow_runbook_traits():
+        return _PATCH_ALLOWED_FIELDS_BASE + ['description']
+    return _PATCH_ALLOWED_FIELDS_BASE
+
+
+def _get_runbook_schema():
+    """Return the appropriate runbook schema for the current API version."""
+    if api_utils.allow_runbook_traits():
+        return RUNBOOK_SCHEMA_V112
+    return RUNBOOK_SCHEMA
+
+
+def _get_runbook_validator():
+    """Return a validator for the current API version."""
+    schema = _get_runbook_schema()
+    return args.and_valid(
+        args.schema(schema),
+        api_utils.duplicate_steps,
+        args.dict_valid(uuid=args.uuid)
+    )
 
 
 def convert_with_links(rpc_runbook, fields=None, sanitize=True):
     """Add links to the runbook."""
+    base_fields = ['name', 'extra', 'public', 'owner', 'disable_ramdisk']
+    if api_utils.allow_runbook_traits():
+        base_fields.append('description')
     runbook = api_utils.object_to_dict(
         rpc_runbook,
-        fields=('name', 'extra', 'public', 'owner', 'disable_ramdisk'),
+        fields=tuple(base_fields),
         link_resource='runbooks',
     )
     runbook['steps'] = list(api_utils.convert_steps(rpc_runbook.steps))
+
+    if api_utils.allow_runbook_traits():
+        runbook['traits'] = rpc_runbook.traits
 
     if fields is not None:
         api_utils.check_for_invalid_fields(fields, runbook)
@@ -127,10 +217,100 @@ def list_convert_with_links(rpc_runbooks, limit, fields=None, **kwargs):
     )
 
 
+class RunbookTraitsController(rest.RestController):
+    """REST controller for runbook traits."""
+
+    def __init__(self, runbook_ident):
+        super(RunbookTraitsController, self).__init__()
+        self.runbook_ident = runbook_ident
+
+    @METRICS.timer('RunbookTraitsController.get_all')
+    @method.expose()
+    def get_all(self):
+        """List runbook traits."""
+        rpc_runbook = api_utils.check_runbook_policy_and_retrieve(
+            'baremetal:runbook:get', self.runbook_ident)
+        return {'traits': rpc_runbook.traits}
+
+    @METRICS.timer('RunbookTraitsController.put')
+    @method.expose(status_code=http_client.NO_CONTENT)
+    @method.body('body')
+    @args.validate(trait=args.schema(api_utils.TRAITS_SCHEMA),
+                   body=args.schema(RUNBOOK_TRAITS_SCHEMA))
+    def put(self, trait=None, body=None):
+        """Add a trait to a runbook, or replace all traits.
+
+        :param trait: String value; trait to add to the runbook, or None.
+            Mutually exclusive with 'traits'. If not None, adds this
+            trait to the runbook.
+        :param body: dict with 'traits' key; if provided, replaces all traits.
+            Mutually exclusive with 'trait'.
+        """
+        context = api.request.context
+        rpc_runbook = api_utils.check_runbook_policy_and_retrieve(
+            'baremetal:runbook:update', self.runbook_ident)
+
+        traits = None
+        if body and 'traits' in body:
+            traits = body['traits']
+
+        if (trait and traits is not None) or not (trait or traits is not None):
+            msg = _("A single runbook trait may be added via PUT "
+                    "/v1/runbooks/<runbook identifier>/traits/<trait> with "
+                    "no body, or all runbook traits may be replaced via PUT "
+                    "/v1/runbooks/<runbook identifier>/traits with the list "
+                    "of traits specified in the request body.")
+            raise exception.Invalid(msg)
+
+        if trait:
+            if api.request.body and api.request.json_body:
+                msg = _("No body should be provided when adding a trait")
+                raise exception.Invalid(msg)
+            new_traits = set(rpc_runbook.traits) | {trait}
+            objects.RunbookTraitList.create(
+                context, rpc_runbook.id, sorted(new_traits))
+            # Set the HTTP Location Header
+            url_args = '/'.join((self.runbook_ident, 'traits', trait))
+            api.response.location = link.build_url('runbooks', url_args)
+        else:
+            objects.RunbookTraitList.create(context, rpc_runbook.id, traits)
+
+    @METRICS.timer('RunbookTraitsController.delete')
+    @method.expose(status_code=http_client.NO_CONTENT)
+    @args.validate(trait=args.string)
+    def delete(self, trait=None):
+        """Remove one or all traits from a runbook.
+
+        :param trait: String value; trait to remove from the runbook, or None.
+            If None, all traits are removed.
+        """
+        context = api.request.context
+        rpc_runbook = api_utils.check_runbook_policy_and_retrieve(
+            'baremetal:runbook:update', self.runbook_ident)
+
+        if trait:
+            try:
+                objects.RunbookTrait.destroy(
+                    context, rpc_runbook.id, trait)
+            except exception.RunbookTraitNotFound:
+                # Deleting a trait that doesn't exist is a no-op.
+                pass
+        else:
+            objects.RunbookTraitList.destroy(context, rpc_runbook.id)
+
+
 class RunbooksController(rest.RestController):
     """REST controller for runbooks."""
 
-    invalid_sort_key_list = ['extra', 'steps']
+    invalid_sort_key_list = ['extra', 'steps', 'traits']
+
+    @pecan.expose()
+    def _lookup(self, runbook_ident, *remainder):
+        if remainder and remainder[0] == 'traits':
+            if not api_utils.allow_runbook_traits():
+                msg = _("The API version does not allow runbook traits")
+                raise webob_exc.HTTPNotFound(msg)
+            return RunbookTraitsController(runbook_ident), remainder[1:]
 
     @pecan.expose()
     def _route(self, args, request=None):
@@ -233,7 +413,6 @@ class RunbooksController(rest.RestController):
     @METRICS.timer('RunbooksController.post')
     @method.expose(status_code=http_client.CREATED)
     @method.body('runbook')
-    @args.validate(runbook=RUNBOOK_VALIDATOR)
     def post(self, runbook):
         """Create a new runbook.
 
@@ -245,6 +424,10 @@ class RunbooksController(rest.RestController):
         context = api.request.context
         api_utils.check_policy('baremetal:runbook:create')
 
+        # Validate with the appropriate schema for this API version
+        validator = _get_runbook_validator()
+        validator('runbook', runbook)
+
         cdict = context.to_policy_values()
         if cdict.get('system_scope') != 'all':
             project_id = None
@@ -253,9 +436,6 @@ class RunbooksController(rest.RestController):
                 project_id = cdict.get('project_id')
 
             if requested_owner and requested_owner != project_id:
-                # Translation: If project scoped, and an owner has been
-                # requested, and that owner does not match the requester's
-                # project ID value.
                 msg = _("Cannot create a runbook as a project scoped admin "
                         "with an owner other than your own project.")
                 raise exception.Invalid(msg)
@@ -269,6 +449,16 @@ class RunbooksController(rest.RestController):
 
         if not runbook.get('uuid'):
             runbook['uuid'] = uuidutils.generate_uuid()
+
+        # For pre-v1.112 requests, traits are not in the schema so they won't
+        # be present. For v1.112+ they may be provided.
+        if not api_utils.allow_runbook_traits():
+            runbook.pop('traits', None)
+
+        # Ensure traits is always set so the notification payload can be
+        # populated (RunbookCRUDPayload.SCHEMA includes 'traits').
+        runbook.setdefault('traits', [])
+
         new_runbook = objects.Runbook(context, **runbook)
 
         notify.emit_start_notification(context, new_runbook, 'create')
@@ -322,7 +512,8 @@ class RunbooksController(rest.RestController):
         if not api_utils.allow_runbooks():
             raise exception.NotFound()
 
-        api_utils.patch_validate_allowed_fields(patch, PATCH_ALLOWED_FIELDS)
+        api_utils.patch_validate_allowed_fields(patch,
+                                                _get_patch_allowed_fields())
 
         context = api.request.context
 
@@ -348,16 +539,26 @@ class RunbooksController(rest.RestController):
         # apply the patch
         runbook = api_utils.apply_jsonpatch(runbook, patch)
 
-        # validate the result with the patch schema
+        # Use the patch-specific schema (no traits field) so that
+        # patch_update_changed_fields does not try to overwrite traits.
+        if api_utils.allow_runbook_traits():
+            patch_schema = RUNBOOK_PATCH_SCHEMA_V112
+        else:
+            patch_schema = RUNBOOK_SCHEMA
         for step in runbook.get('steps', []):
             api_utils.patched_validate_with_schema(
                 step, api_utils.RUNBOOK_STEP_SCHEMA)
         api_utils.patched_validate_with_schema(
-            runbook, RUNBOOK_SCHEMA, RUNBOOK_VALIDATOR)
+            runbook, patch_schema,
+            args.and_valid(
+                args.schema(patch_schema),
+                api_utils.duplicate_steps,
+                args.dict_valid(uuid=args.uuid)
+            ))
 
         api_utils.patch_update_changed_fields(
             runbook, rpc_runbook, fields=objects.Runbook.fields,
-            schema=RUNBOOK_SCHEMA
+            schema=patch_schema
         )
 
         notify.emit_start_notification(context, rpc_runbook, 'update')

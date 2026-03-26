@@ -1232,16 +1232,36 @@ class ConductorManager(base_manager.BaseConductorManager):
 
         if runbook_ident:
             runbook = self.get_runbook(task.context, runbook_ident)
-            if rb_validate and (runbook.name not in
-                                node.traits.get_trait_names()):
-                msg = _(
-                    "Automated cleaning runbook %(rb)s is not valid for "
-                    "node %(node)s. Runbook name must match a node trait."
-                ) % {'rb': runbook.name, 'node': node.uuid}
-                # NOTE(JayF): Cleaning failures due to misconfiguration
-                #             logged at error, here and below.
-                LOG.error(msg)
-                raise exception.NodeCleaningFailure(node=node, message=msg)
+            if rb_validate:
+                node_trait_names = set(node.traits.get_trait_names())
+                runbook_traits = set(getattr(runbook, 'traits', []) or [])
+                if runbook_traits:
+                    # v1.112+ style: check intersection of runbook traits
+                    # and node traits.
+                    if not (runbook_traits & node_trait_names):
+                        msg = _(
+                            "Automated cleaning runbook %(rb)s is not valid "
+                            "for node %(node)s. None of the runbook's traits "
+                            "%(traits)s match a node trait."
+                        ) % {'rb': runbook.name, 'node': node.uuid,
+                             'traits': sorted(runbook_traits)}
+                        LOG.error(msg)
+                        raise exception.NodeCleaningFailure(
+                            node=node, message=msg)
+                else:
+                    # Legacy style: runbook name must match a node trait.
+                    if runbook.name not in node_trait_names:
+                        msg = _(
+                            "Automated cleaning runbook %(rb)s is not valid "
+                            "for node %(node)s. Runbook name must match a "
+                            "node trait."
+                        ) % {'rb': runbook.name, 'node': node.uuid}
+                        # NOTE(JayF): Cleaning failures due to
+                        #             misconfiguration logged at error,
+                        #             here and below.
+                        LOG.error(msg)
+                        raise exception.NodeCleaningFailure(
+                            node=node, message=msg)
 
             return convert_steps(runbook.steps), runbook.disable_ramdisk
         elif rb_source == automated_clean_methods.RUNBOOK:

@@ -7035,6 +7035,7 @@ class GetStepsForAutomatedCleaningTestCase(mgr_utils.ServiceSetUpMixin,
         self.node.resource_class = 'baremetal'
         rb = mock.Mock(spec_set=objects.Runbook)
         rb.name = self.rb_name
+        rb.traits = []
         exp_steps = [{'interface': 'deploy', 'step': 'test_step', 'args': {}}]
         rb.steps = exp_steps
         rb.disable_ramdisk = True
@@ -7060,6 +7061,7 @@ class GetStepsForAutomatedCleaningTestCase(mgr_utils.ServiceSetUpMixin,
         self._set_node_trait(rb_to_use)
         rb = mock.Mock(spec_set=objects.Runbook)
         rb.name = rb_to_use
+        rb.traits = []
         exp_steps = [{'interface': 'deploy', 'step': 'test_step', 'args': {}}]
         rb.steps = exp_steps
         rb.disable_ramdisk = True
@@ -7096,6 +7098,7 @@ class GetStepsForAutomatedCleaningTestCase(mgr_utils.ServiceSetUpMixin,
         self._set_node_trait(rb_to_use)
         rb = mock.Mock(spec_set=objects.Runbook)
         rb.name = rb_to_use
+        rb.traits = []
         exp_steps = [{'interface': 'deploy', 'step': 'test_step', 'args': {}}]
         rb.steps = exp_steps
         rb.disable_ramdisk = True
@@ -7150,9 +7153,7 @@ class GetStepsForAutomatedCleaningTestCase(mgr_utils.ServiceSetUpMixin,
         self.node.resource_class = 'baremetal'
         rb = mock.Mock(spec_set=objects.Runbook)
         rb.name = bad_rb_name
-#        exp_steps = [{'interface': 'deploy', 'step': 'test_step', 'args': {}}]
-#        rb.steps = exp_steps
-#        rb.disable_ramdisk = True
+        rb.traits = []  # legacy path: name must match a node trait
         mock_get_runbook.return_value = rb
 
         self.assertRaises(exception.NodeCleaningFailure,
@@ -7189,6 +7190,94 @@ class GetStepsForAutomatedCleaningTestCase(mgr_utils.ServiceSetUpMixin,
                                                  bad_rb_name)
         self.assertEqual(steps, exp_steps)
         self.assertTrue(dr)
+
+    @mock.patch.object(manager.ConductorManager, 'get_runbook', autospec=True)
+    def test_gsfac_runbook_traits_intersection_valid(
+            self, mock_get_runbook, mt):
+        """Runbook has traits; node has at least one matching, steps returned.
+
+        When runbook.traits is non-empty and intersects node traits, the
+        validation should pass and the runbook steps should be returned.
+        """
+        CONF.set_override('automated_cleaning_step_source', 'runbook',
+                          group='conductor')
+        CONF.set_override('automated_cleaning_runbook', self.rb_name,
+                          group='conductor')
+        # node has CUSTOM_BM_RB (from setUp) and one extra trait
+        self._set_node_trait('CUSTOM_EXTRA')
+        rb = mock.Mock(spec_set=objects.Runbook)
+        rb.name = self.rb_name
+        rb.traits = [self.rb_name, 'CUSTOM_EXTRA']
+        exp_steps = [{'interface': 'deploy', 'step': 'do_thing', 'args': {}}]
+        rb.steps = exp_steps
+        rb.disable_ramdisk = False
+        mock_get_runbook.return_value = rb
+
+        steps, dr = self.service._get_steps_for_automated_cleaning(self.task)
+
+        mock_get_runbook.assert_called_once_with(mock.ANY, mock.ANY,
+                                                 self.rb_name)
+        self.assertEqual(exp_steps, steps)
+        self.assertFalse(dr)
+
+    @mock.patch.object(manager.ConductorManager, 'get_runbook', autospec=True)
+    def test_gsfac_runbook_traits_no_intersection_raises(
+            self, mock_get_runbook, mt):
+        """Runbook has traits; node has none of them, NodeCleaningFailure."""
+        CONF.set_override('automated_cleaning_step_source', 'runbook',
+                          group='conductor')
+        CONF.set_override('automated_cleaning_runbook', 'CUSTOM_OTHER',
+                          group='conductor')
+        rb = mock.Mock(spec_set=objects.Runbook)
+        rb.name = 'CUSTOM_OTHER'
+        # node traits contain only CUSTOM_BM_RB, not CUSTOM_X or CUSTOM_Y
+        rb.traits = ['CUSTOM_X', 'CUSTOM_Y']
+        mock_get_runbook.return_value = rb
+
+        self.assertRaises(
+            exception.NodeCleaningFailure,
+            self.service._get_steps_for_automated_cleaning,
+            self.task)
+        self.assertTrue(mock_get_runbook.called)
+
+    @mock.patch.object(manager.ConductorManager, 'get_runbook', autospec=True)
+    def test_gsfac_runbook_legacy_name_match(self, mock_get_runbook, mt):
+        """Legacy (no traits) runbook: name in node traits, succeeds."""
+        CONF.set_override('automated_cleaning_step_source', 'runbook',
+                          group='conductor')
+        CONF.set_override('automated_cleaning_runbook', self.rb_name,
+                          group='conductor')
+        rb = mock.Mock(spec_set=objects.Runbook)
+        rb.name = self.rb_name
+        rb.traits = []  # no traits; use legacy name-check path
+        exp_steps = [{'interface': 'deploy', 'step': 'do_thing', 'args': {}}]
+        rb.steps = exp_steps
+        rb.disable_ramdisk = False
+        mock_get_runbook.return_value = rb
+
+        steps, dr = self.service._get_steps_for_automated_cleaning(self.task)
+
+        self.assertEqual(exp_steps, steps)
+        self.assertFalse(dr)
+
+    @mock.patch.object(manager.ConductorManager, 'get_runbook', autospec=True)
+    def test_gsfac_runbook_legacy_name_no_match_raises(
+            self, mock_get_runbook, mt):
+        """Legacy (no traits) runbook: name absent from node traits, fails."""
+        CONF.set_override('automated_cleaning_step_source', 'runbook',
+                          group='conductor')
+        CONF.set_override('automated_cleaning_runbook', 'CUSTOM_ABSENT',
+                          group='conductor')
+        rb = mock.Mock(spec_set=objects.Runbook)
+        rb.name = 'CUSTOM_ABSENT'
+        rb.traits = []  # legacy path
+        mock_get_runbook.return_value = rb
+
+        self.assertRaises(
+            exception.NodeCleaningFailure,
+            self.service._get_steps_for_automated_cleaning,
+            self.task)
+        self.assertTrue(mock_get_runbook.called)
 
 
 @mock.patch.object(task_manager, 'acquire', autospec=True)
