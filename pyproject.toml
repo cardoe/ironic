@@ -197,6 +197,19 @@ ironic = "ironic.common.policy:get_oslo_policy_enforcer"
 [project.entry-points."oslo.policy.policies"]
 "ironic.api" = "ironic.common.policy:list_policies"
 
+[project.entry-points."ironic.sushy.resources.manager.oems"]
+dell = "ironic.sushy.oem.dell.resources.manager.manager:get_extension"
+
+[project.entry-points."ironic.sushy.resources.storage_controller.oems"]
+dell = "ironic.sushy.oem.dell.resources.system.storage.controller:get_extension"
+
+[project.entry-points."ironic.sushy.resources.system.oems"]
+contoso = "ironic.sushy.resources.oem.fake:get_extension"
+dell = "ironic.sushy.oem.dell.resources.system.system:get_extension"
+
+[project.entry-points."ironic.sushy.resources.task.oems"]
+dell = "ironic.sushy.oem.dell.resources.taskservice.task:get_extension"
+
 [project.scripts]
 ironic = "ironic.command.singleprocess:main"
 ironic-api = "ironic.command.api:main"
@@ -274,6 +287,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "ironic/tests/**/*.py" = [
+    "E402",     # module-import-not-at-top-of-file
+]
+"ironic/sushy/tests/**/*.py" = [
     "E402",     # module-import-not-at-top-of-file
 ]
 "ironic/drivers/modules/drac/raid.py" = [
