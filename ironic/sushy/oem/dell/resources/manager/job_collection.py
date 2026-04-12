@@ -14,8 +14,8 @@
 
 import logging
 
-from sushy.oem.dell import constants
-from sushy.resources import base
+from ironic.sushy.oem.dell import constants
+from ironic.sushy.resources import base
 
 LOG = logging.getLogger(__name__)
 

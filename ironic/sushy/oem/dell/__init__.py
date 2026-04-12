@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from sushy.oem.dell.resources.manager.constants import *  # noqa
-from sushy.oem.dell.resources.system.constants import *  # noqa
-from sushy.oem.dell.resources.system.storage.constants import * # noqa
-from sushy.oem.dell.resources.taskservice.constants import *  # noqa
+from ironic.sushy.oem.dell.resources.manager.constants import *  # noqa
+from ironic.sushy.oem.dell.resources.system.constants import *  # noqa
+from ironic.sushy.oem.dell.resources.system.storage.constants import * # noqa
+from ironic.sushy.oem.dell.resources.taskservice.constants import *  # noqa

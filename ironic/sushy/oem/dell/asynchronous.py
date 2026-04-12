@@ -17,7 +17,7 @@ import time
 
 from dateutil import parser
 
-import sushy
+from ironic import sushy
 
 LOG = logging.getLogger(__name__)
 

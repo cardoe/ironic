@@ -14,12 +14,12 @@
 # This is referred from Redfish standard schema.
 # https://redfish.dmtf.org/schemas/v1/NetworkAdapter.v1_3_0.json
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.system.network import device_function
-from sushy.resources.system.network import port as network_port
-from sushy.resources.system import port
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.system.network import device_function
+from ironic.sushy.resources.system.network import port as network_port
+from ironic.sushy.resources.system import port
+from ironic.sushy import utils
 
 
 class ControllersListField(base.ListField):

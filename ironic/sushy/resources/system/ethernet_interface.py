@@ -15,10 +15,10 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

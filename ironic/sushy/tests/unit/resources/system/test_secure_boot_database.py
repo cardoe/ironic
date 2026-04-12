@@ -13,10 +13,10 @@
 import json
 from unittest import mock
 
-from sushy import exceptions
-from sushy.resources.system import constants
-from sushy.resources.system import secure_boot_database
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources.system import constants
+from ironic.sushy.resources.system import secure_boot_database
+from ironic.sushy.tests.unit import base
 
 
 class SecureBootDatabaseTestCase(base.TestCase):

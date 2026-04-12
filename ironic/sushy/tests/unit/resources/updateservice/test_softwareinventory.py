@@ -14,10 +14,10 @@
 import json
 from unittest import mock
 
-from sushy import exceptions
-from sushy.resources import constants as res_cons
-from sushy.resources.updateservice import softwareinventory
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.updateservice import softwareinventory
+from ironic.sushy.tests.unit import base
 
 
 class SoftwareInventoryTestCase(base.TestCase):

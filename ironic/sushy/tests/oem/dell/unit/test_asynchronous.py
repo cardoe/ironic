@@ -18,8 +18,8 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-import sushy
-from sushy.oem.dell.asynchronous import http_call
+from ironic import sushy
+from ironic.sushy.oem.dell.asynchronous import http_call
 
 
 class AsychronousTestCase(BaseTestCase):

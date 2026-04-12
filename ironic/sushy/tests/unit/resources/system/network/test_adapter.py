@@ -14,12 +14,12 @@
 import json
 from unittest import mock
 
-from sushy.resources import constants as res_cons
-from sushy.resources.system.network import adapter
-from sushy.resources.system.network import device_function
-from sushy.resources.system.network import port as network_port
-from sushy.resources.system import port
-from sushy.tests.unit import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system.network import adapter
+from ironic.sushy.resources.system.network import device_function
+from ironic.sushy.resources.system.network import port as network_port
+from ironic.sushy.resources.system import port
+from ironic.sushy.tests.unit import base
 
 
 class NetworkAdapterTestCase(base.TestCase):

@@ -15,10 +15,10 @@
 import logging
 import secrets
 
-from sushy import exceptions
-from sushy.oem.dell.resources.manager import constants as mgr_cons
-from sushy.resources import base
-from sushy.resources import common
+from ironic.sushy import exceptions
+from ironic.sushy.oem.dell.resources.manager import constants as mgr_cons
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
 
 LOG = logging.getLogger(__name__)
 

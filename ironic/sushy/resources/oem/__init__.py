@@ -10,6 +10,6 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from sushy.resources.oem.common import get_resource_extension_by_vendor
+from ironic.sushy.resources.oem.common import get_resource_extension_by_vendor
 
 __all__ = ('get_resource_extension_by_vendor',)

@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from sushy.resources import base
+from ironic.sushy.resources import base
 
 
 class DellAttributes(base.ResourceBase):

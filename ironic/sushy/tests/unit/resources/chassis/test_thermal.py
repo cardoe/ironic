@@ -14,10 +14,10 @@
 import json
 from unittest import mock
 
-from sushy.resources.chassis.thermal import constants as the_cons
-from sushy.resources.chassis.thermal import thermal
-from sushy.resources import constants as res_cons
-from sushy.tests.unit import base
+from ironic.sushy.resources.chassis.thermal import constants as the_cons
+from ironic.sushy.resources.chassis.thermal import thermal
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.tests.unit import base
 
 
 class ThermalTestCase(base.TestCase):

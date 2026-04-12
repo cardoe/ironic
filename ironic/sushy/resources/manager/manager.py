@@ -15,14 +15,14 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy.resources.manager import constants as mgr_cons
-from sushy.resources.manager import virtual_media
-from sushy.resources.system import ethernet_interface
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.manager import constants as mgr_cons
+from ironic.sushy.resources.manager import virtual_media
+from ironic.sushy.resources.system import ethernet_interface
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)

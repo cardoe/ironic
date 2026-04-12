@@ -16,22 +16,22 @@
 import json
 from unittest import mock
 
-from sushy import auth
-from sushy import connector
-from sushy import exceptions
-from sushy import main
-from sushy.resources.chassis import chassis
-from sushy.resources.compositionservice import compositionservice
-from sushy.resources.eventservice import eventservice
-from sushy.resources.fabric import fabric
-from sushy.resources.manager import manager
-from sushy.resources.registry import message_registry_file
-from sushy.resources.sessionservice import session
-from sushy.resources.sessionservice import sessionservice
-from sushy.resources.system import system
-from sushy.resources.updateservice import updateservice
-from sushy import taskmonitor
-from sushy.tests.unit import base
+from ironic.sushy import auth
+from ironic.sushy import connector
+from ironic.sushy import exceptions
+from ironic.sushy import main
+from ironic.sushy.resources.chassis import chassis
+from ironic.sushy.resources.compositionservice import compositionservice
+from ironic.sushy.resources.eventservice import eventservice
+from ironic.sushy.resources.fabric import fabric
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.registry import message_registry_file
+from ironic.sushy.resources.sessionservice import session
+from ironic.sushy.resources.sessionservice import sessionservice
+from ironic.sushy.resources.system import system
+from ironic.sushy.resources.updateservice import updateservice
+from ironic.sushy import taskmonitor
+from ironic.sushy.tests.unit import base
 
 
 class MainTestCase(base.TestCase):

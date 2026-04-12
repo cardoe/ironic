@@ -19,11 +19,11 @@
 from http import client as http_client
 import logging
 
-from sushy.resources import base
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import message_registry
-from sushy.resources.taskservice import constants as ts_cons
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import message_registry
+from ironic.sushy.resources.taskservice import constants as ts_cons
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)

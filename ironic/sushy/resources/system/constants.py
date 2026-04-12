@@ -18,7 +18,7 @@
 
 import enum
 
-from sushy.resources import constants as res_cons
+from ironic.sushy.resources import constants as res_cons
 
 # Reset action constants
 

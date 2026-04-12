@@ -16,13 +16,13 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.updateservice import constants as up_cons
-from sushy.resources.updateservice import softwareinventory
-from sushy import taskmonitor
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.updateservice import constants as up_cons
+from ironic.sushy.resources.updateservice import softwareinventory
+from ironic.sushy import taskmonitor
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

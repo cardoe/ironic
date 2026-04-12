@@ -16,11 +16,11 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.taskservice import constants as ts_cons
-from sushy.resources.taskservice import task
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.taskservice import constants as ts_cons
+from ironic.sushy.resources.taskservice import task
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

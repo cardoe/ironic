@@ -16,10 +16,10 @@
 import json
 from unittest import mock
 
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import message_registry
-from sushy.resources import settings
-from sushy.tests.unit import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import message_registry
+from ironic.sushy.resources import settings
+from ironic.sushy.tests.unit import base
 
 
 class SettingsFieldTestCase(base.TestCase):

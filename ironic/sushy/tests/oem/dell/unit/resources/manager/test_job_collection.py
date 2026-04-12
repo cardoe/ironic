@@ -17,7 +17,7 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-from sushy.oem.dell.resources.manager import job_collection
+from ironic.sushy.oem.dell.resources.manager import job_collection
 
 
 class DellJobCollectionTestCase(BaseTestCase):

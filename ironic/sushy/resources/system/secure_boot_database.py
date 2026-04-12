@@ -12,10 +12,10 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.system import constants
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.system import constants
 
 LOG = logging.getLogger(__name__)
 

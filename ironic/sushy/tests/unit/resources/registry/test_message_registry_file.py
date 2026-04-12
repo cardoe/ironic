@@ -16,9 +16,9 @@
 import json
 from unittest import mock
 
-from sushy.resources.base import FieldData
-from sushy.resources.registry import message_registry_file
-from sushy.tests.unit import base
+from ironic.sushy.resources.base import FieldData
+from ironic.sushy.resources.registry import message_registry_file
+from ironic.sushy.tests.unit import base
 
 
 class MessageRegistryFileTestCase(base.TestCase):
@@ -63,9 +63,9 @@ class MessageRegistryFileTestCase(base.TestCase):
         self.assertEqual(['en'], attributes.get('languages'))
         self.assertEqual('Test.1.0', attributes.get('registry'))
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.base.JsonDataReader', autospec=True)
+    @mock.patch('ironic.sushy.resources.base.JsonDataReader', autospec=True)
     def test_get_message_registry_uri(self, mock_reader, mock_msg_reg):
         mock_reader_rv = mock.Mock()
         mock_reader.return_value = mock_reader_rv
@@ -81,9 +81,9 @@ class MessageRegistryFileTestCase(base.TestCase):
             reader=None, redfish_version=self.reg_file.redfish_version)
         self.assertEqual(mock_msg_reg_rv, registry)
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.base.JsonArchiveReader', autospec=True)
+    @mock.patch('ironic.sushy.resources.base.JsonArchiveReader', autospec=True)
     def test_get_message_registry_archive(self, mock_reader, mock_msg_reg):
         mock_reader_rv = mock.Mock()
         mock_reader.return_value = mock_reader_rv
@@ -102,9 +102,9 @@ class MessageRegistryFileTestCase(base.TestCase):
         mock_reader.assert_called_once_with('Test.1.0.json')
         self.assertEqual(mock_msg_reg_rv, registry)
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.base.JsonPublicFileReader', autospec=True)
+    @mock.patch('ironic.sushy.resources.base.JsonPublicFileReader', autospec=True)
     def test_get_message_registry_public(self, mock_reader, mock_msg_reg):
         public_connector = mock.Mock()
         mock_reader_rv = mock.Mock()
@@ -125,9 +125,9 @@ class MessageRegistryFileTestCase(base.TestCase):
             reader=mock_reader_rv)
         self.assertEqual(mock_msg_reg_rv, registry)
 
-    @mock.patch('sushy.resources.registry.message_registry_file.RegistryType',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.RegistryType',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.LOG',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.LOG',
                 autospec=True)
     def test_get_message_registry_unknown_type(
             self, mock_log, mock_registry_type):
@@ -140,9 +140,9 @@ class MessageRegistryFileTestCase(base.TestCase):
             'Ignoring unsupported flavor of registry %(registry)s',
             {'registry': 'FishingRegistry'})
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.LOG',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.LOG',
                 autospec=True)
     def test_get_message_registry_invalid(self, mock_log, mock_msg_reg):
         mock_msg_reg_rv = mock.Mock()
@@ -158,11 +158,11 @@ class MessageRegistryFileTestCase(base.TestCase):
             'No registry found for %(language)s or default',
             {'language': 'en'})
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.RegistryType',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.RegistryType',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.LOG',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.LOG',
                 autospec=True)
     def test_get_message_registry_invalid_uri(
             self, mock_log, mock_msg_reg_type, mock_msg_reg):
@@ -201,7 +201,7 @@ class MessageRegistryFileTestCase(base.TestCase):
 
         mock_log.warning.assert_has_calls(expected_calls)
 
-    @mock.patch('sushy.resources.registry.message_registry_file.RegistryType',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.RegistryType',
                 autospec=True)
     def test_get_message_registry_non_default_lang(self, mock_registry_type):
         mock_fishing_registry = mock_registry_type.return_value
@@ -213,9 +213,9 @@ class MessageRegistryFileTestCase(base.TestCase):
             reader=None, redfish_version=self.reg_file.redfish_version)
         self.assertIsNone(registry)
 
-    @mock.patch('sushy.resources.registry.message_registry_file.LOG',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.LOG',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.RegistryType',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.RegistryType',
                 autospec=True)
     def test_get_message_registry_loading_type_fails(
             self, mock_reg_type, mock_log):
@@ -233,7 +233,7 @@ class MessageRegistryFileTestCase(base.TestCase):
             'No registry found for %(language)s or default',
             {'language': 'en'})
 
-    @mock.patch('sushy.resources.registry.message_registry_file.RegistryType',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.RegistryType',
                 autospec=True)
     def test_get_message_registry_strangely_cased_lang(
             self, mock_registry_type):
@@ -246,9 +246,9 @@ class MessageRegistryFileTestCase(base.TestCase):
             reader=None, redfish_version=self.reg_file.redfish_version)
         self.assertIsNone(registry)
 
-    @mock.patch('sushy.resources.registry.message_registry.MessageRegistry',
+    @mock.patch('ironic.sushy.resources.registry.message_registry.MessageRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.registry.message_registry_file.LOG',
+    @mock.patch('ironic.sushy.resources.registry.message_registry_file.LOG',
                 autospec=True)
     def test_get_message_registry_missing_lang(self, mock_log, mock_msg_reg):
         mock_msg_reg_rv = mock.Mock()
@@ -262,7 +262,7 @@ class MessageRegistryFileTestCase(base.TestCase):
             'No registry found for %(language)s or default',
             {'language': 'en'})
 
-    @mock.patch('sushy.resources.base.logging.warning',
+    @mock.patch('ironic.sushy.resources.base.logging.warning',
                 autospec=True)
     def test__parse_attributes_missing_registry(self, mock_log):
         self.json_doc.pop('Registry')
@@ -288,10 +288,10 @@ class BiosRegistryTestCase(base.TestCase):
             self.conn, '/redfish/v1/Registries/BiosAttributeRegistry.v1_0',
             redfish_version='1.0.2')
 
-    @mock.patch('sushy.resources.registry.attribute_registry.'
+    @mock.patch('ironic.sushy.resources.registry.attribute_registry.'
                 'AttributeRegistry',
                 autospec=True)
-    @mock.patch('sushy.resources.base.JsonDataReader', autospec=True)
+    @mock.patch('ironic.sushy.resources.base.JsonDataReader', autospec=True)
     def test_get_bios_registry_uri(self, mock_reader, mock_msg_reg):
         mock_reader_rv = mock.Mock()
         mock_reader.return_value = mock_reader_rv

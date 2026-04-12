@@ -17,9 +17,9 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-from sushy import exceptions
-from sushy.oem.dell.resources.system import raid_service
-from sushy import taskmonitor
+from ironic.sushy import exceptions
+from ironic.sushy.oem.dell.resources.system import raid_service
+from ironic.sushy import taskmonitor
 
 
 class DellRaidService(BaseTestCase):

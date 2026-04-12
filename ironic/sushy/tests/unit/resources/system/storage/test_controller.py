@@ -14,10 +14,10 @@ from http import client as http_client
 import json
 from unittest import mock
 
-import sushy
-from sushy.resources.system.storage import controller
-from sushy import taskmonitor
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy.resources.system.storage import controller
+from ironic.sushy import taskmonitor
+from ironic.sushy.tests.unit import base
 
 
 class ControllerTestCase(base.TestCase):

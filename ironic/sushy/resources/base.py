@@ -23,10 +23,10 @@ import json
 import logging
 import zipfile
 
-from sushy import exceptions
-from sushy.resources import constants
-from sushy.resources import oem
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants
+from ironic.sushy.resources import oem
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)

@@ -20,10 +20,10 @@ from unittest import mock
 
 import requests
 
-from sushy import auth as sushy_auth
-from sushy import connector
-from sushy import exceptions
-from sushy.tests.unit import base
+from ironic.sushy import auth as sushy_auth
+from ironic.sushy import connector
+from ironic.sushy import exceptions
+from ironic.sushy.tests.unit import base
 
 
 class ConnectorMethodsTestCase(base.TestCase):

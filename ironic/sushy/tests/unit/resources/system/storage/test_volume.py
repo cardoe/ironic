@@ -15,13 +15,13 @@ from unittest import mock
 
 from dateutil import parser
 
-import sushy
-from sushy import exceptions
-from sushy.resources import constants as res_cons
-from sushy.resources.system.storage import constants as store_cons
-from sushy.resources.system.storage import volume
-from sushy import taskmonitor
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system.storage import constants as store_cons
+from ironic.sushy.resources.system.storage import volume
+from ironic.sushy import taskmonitor
+from ironic.sushy.tests.unit import base
 
 
 class VolumeTestCase(base.TestCase):

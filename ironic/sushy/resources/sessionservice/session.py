@@ -18,7 +18,7 @@
 
 import logging
 
-from sushy.resources import base
+from ironic.sushy.resources import base
 
 LOG = logging.getLogger(__name__)
 

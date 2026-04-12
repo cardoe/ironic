@@ -14,10 +14,10 @@
 import json
 from unittest import mock
 
-from sushy.resources.chassis.power import constants as pow_cons
-from sushy.resources.chassis.power import power
-from sushy.resources import constants as res_cons
-from sushy.tests.unit import base
+from ironic.sushy.resources.chassis.power import constants as pow_cons
+from ironic.sushy.resources.chassis.power import power
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.tests.unit import base
 
 
 class PowerTestCase(base.TestCase):

@@ -14,10 +14,10 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy import exceptions
-from sushy.resources.system.storage import drive
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.system.storage import drive
+from ironic.sushy.tests.unit import base
 
 
 class DriveTestCase(base.TestCase):

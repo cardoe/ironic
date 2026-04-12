@@ -17,7 +17,7 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-from sushy.oem.dell.resources.manager import job_service
+from ironic.sushy.oem.dell.resources.manager import job_service
 
 
 class DellJobServiceTestCase(BaseTestCase):

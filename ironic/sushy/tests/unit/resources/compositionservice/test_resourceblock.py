@@ -14,11 +14,11 @@
 import json
 from unittest import mock
 
-from sushy import exceptions
-from sushy.resources.compositionservice import constants as res_block_cons
-from sushy.resources.compositionservice import resourceblock
-from sushy.resources import constants as res_cons
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources.compositionservice import constants as res_block_cons
+from ironic.sushy.resources.compositionservice import resourceblock
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.tests.unit import base
 
 
 class ResourceBlockTestCase(base.TestCase):

@@ -16,11 +16,11 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy import exceptions
-from sushy.resources import constants as res_cons
-from sushy.resources.system import processor
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system import processor
+from ironic.sushy.tests.unit import base
 
 
 class ProcessorTestCase(base.TestCase):

@@ -25,9 +25,9 @@ from requests.adapters import HTTPAdapter
 from requests import exceptions as req_exc
 from urllib3.exceptions import InsecureRequestWarning
 
-from sushy import exceptions
-from sushy.taskmonitor import TaskMonitor
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.taskmonitor import TaskMonitor
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

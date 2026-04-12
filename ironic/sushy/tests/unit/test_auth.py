@@ -17,11 +17,11 @@ from unittest import mock
 
 import requests
 
-from sushy import auth
-from sushy import connector
-from sushy import exceptions
-from sushy import main
-from sushy.tests.unit import base
+from ironic.sushy import auth
+from ironic.sushy import connector
+from ironic.sushy import exceptions
+from ironic.sushy import main
+from ironic.sushy.tests.unit import base
 
 
 class BasicAuthTestCase(base.TestCase):

@@ -13,8 +13,8 @@
 import json
 from unittest import mock
 
-from sushy.resources.eventservice import eventdestination
-from sushy.tests.unit import base
+from ironic.sushy.resources.eventservice import eventdestination
+from ironic.sushy.tests.unit import base
 
 
 class EventDestinationTestCase(base.TestCase):

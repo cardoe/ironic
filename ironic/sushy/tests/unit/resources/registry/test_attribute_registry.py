@@ -16,8 +16,8 @@
 import json
 from unittest import mock
 
-from sushy.resources.registry import attribute_registry
-from sushy.tests.unit import base
+from ironic.sushy.resources.registry import attribute_registry
+from ironic.sushy.tests.unit import base
 
 
 class AttributeRegistryTestCase(base.TestCase):

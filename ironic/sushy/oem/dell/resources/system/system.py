@@ -12,12 +12,12 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import sushy
-from sushy import exceptions
-from sushy.oem.dell.resources.system import constants as sys_cons
-from sushy.oem.dell.resources.system import raid_service
-from sushy.resources.oem import base as oem_base
-from sushy import utils as sushy_utils
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.oem.dell.resources.system import constants as sys_cons
+from ironic.sushy.oem.dell.resources.system import raid_service
+from ironic.sushy.resources.oem import base as oem_base
+from ironic.sushy import utils as sushy_utils
 
 
 def _filter_disks_not_in_mode(controller_to_disks, mode):

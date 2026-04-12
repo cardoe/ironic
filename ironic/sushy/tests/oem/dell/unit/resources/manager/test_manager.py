@@ -21,15 +21,15 @@ from unittest import mock
 from oslotest.base import BaseTestCase
 import requests
 
-import sushy
-from sushy.oem.dell.resources.manager import constants as mgr_cons
-from sushy.oem.dell.resources.manager import idrac_card_service as idrac_card
-from sushy.oem.dell.resources.manager import job_collection as jc
-from sushy.oem.dell.resources.manager import job_service as job
-from sushy.oem.dell.resources.manager import lifecycle_service as lifecycle
-from sushy.oem.dell.resources.manager import manager as oem_manager
-from sushy.resources.manager import manager
-from sushy.taskmonitor import TaskMonitor
+from ironic import sushy
+from ironic.sushy.oem.dell.resources.manager import constants as mgr_cons
+from ironic.sushy.oem.dell.resources.manager import idrac_card_service as idrac_card
+from ironic.sushy.oem.dell.resources.manager import job_collection as jc
+from ironic.sushy.oem.dell.resources.manager import job_service as job
+from ironic.sushy.oem.dell.resources.manager import lifecycle_service as lifecycle
+from ironic.sushy.oem.dell.resources.manager import manager as oem_manager
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.taskmonitor import TaskMonitor
 
 
 class ManagerTestCase(BaseTestCase):
@@ -52,7 +52,7 @@ class ManagerTestCase(BaseTestCase):
         self.manager = manager.Manager(self.conn, '/redfish/v1/Managers/BMC',
                                        redfish_version='1.0.2')
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_import_system_configuration_uri(self):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -61,7 +61,7 @@ class ManagerTestCase(BaseTestCase):
             '.ImportSystemConfiguration',
             oem.import_system_configuration_uri)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_set_virtual_boot_device_cd(self):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -79,7 +79,7 @@ class ManagerTestCase(BaseTestCase):
                   '#FirstBootDevice">VCD-DVD</Attribute></Component>'
                   '</SystemConfiguration>'})
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_set_virtual_boot_device_cd_no_manager_passed(self):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -97,7 +97,7 @@ class ManagerTestCase(BaseTestCase):
                   '</SystemConfiguration>'})
 
     @mock.patch('time.sleep', autospec=True)
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_set_virtual_boot_device_cd_running_exc(self, mock_sleep):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -132,7 +132,7 @@ class ManagerTestCase(BaseTestCase):
                   '</SystemConfiguration>'})
 
     @mock.patch('sushy.oem.dell.utils.reboot_system', autospec=True)
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_set_virtual_boot_device_cd_pending_exc(self, mock_reboot):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -166,7 +166,7 @@ class ManagerTestCase(BaseTestCase):
                   '#FirstBootDevice">VCD-DVD</Attribute></Component>'
                   '</SystemConfiguration>'})
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_set_virtual_boot_device_cd_other_exc(self):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -181,7 +181,7 @@ class ManagerTestCase(BaseTestCase):
                           sushy.VIRTUAL_MEDIA_CD,
                           manager=self.manager)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_allowed_export_target_values(self):
         oem = self.manager.get_oem_extension('Dell')
         expected_values = {mgr_cons.ExportTarget.IDRAC,
@@ -192,7 +192,7 @@ class ManagerTestCase(BaseTestCase):
         allowed_values = oem.get_allowed_export_target_values()
         self.assertEqual(expected_values, allowed_values)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_allowed_export_target_values_missing(self):
         oem = self.manager.get_oem_extension('Dell')
         export_action = ('OemManager.v1_0_0'
@@ -209,7 +209,7 @@ class ManagerTestCase(BaseTestCase):
         allowed_values = oem.get_allowed_export_target_values()
         self.assertEqual(expected_values, allowed_values)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_export_system_configuration_uri(self):
         oem = self.manager.get_oem_extension('Dell')
 
@@ -218,7 +218,7 @@ class ManagerTestCase(BaseTestCase):
             '.ExportSystemConfiguration',
             oem.export_system_configuration_uri)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test__export_system_configuration(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration(
@@ -232,7 +232,7 @@ class ManagerTestCase(BaseTestCase):
                                                 'ExportUse': 'Default',
                                                 'IncludeInExport': 'Default'})
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test__export_system_configuration_nondefault(self):
         oem = self.manager.get_oem_extension('Dell')
         include_in_export = mgr_cons.IncludeInExport.READ_ONLY_PASSWORD_HASHES
@@ -251,7 +251,7 @@ class ManagerTestCase(BaseTestCase):
                                                     'IncludeReadOnly,Include'
                                                     'PasswordHashValues'})
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test__export_system_configuration_invalid_target(self):
         oem = self.manager.get_oem_extension('Dell')
         target = "xyz"
@@ -316,7 +316,7 @@ class ManagerTestCase(BaseTestCase):
                                                     'IncludeReadOnly,Include'
                                                     'PasswordHashValues'})
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_allowed_export_use_values(self):
         oem = self.manager.get_oem_extension('Dell')
         expected_values = {mgr_cons.ExportUse.DEFAULT,
@@ -342,7 +342,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertEqual(expected_values, allowed_values)
         mock_log.warning.assert_called_once()
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_allowed_include_in_export_values(self):
         oem = self.manager.get_oem_extension('Dell')
         expected_values = {mgr_cons.IncludeInExport.DEFAULT,
@@ -369,7 +369,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertEqual(expected_values, allowed_values)
         mock_log.warning.assert_called_once()
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_export_system_configuration(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration = mock.Mock()
@@ -385,7 +385,7 @@ class ManagerTestCase(BaseTestCase):
             export_use=mgr_cons.ExportUse.CLONE,
             include_in_export=include_in_export)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_export_system_configuration_destructive_fields(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration = mock.Mock()
@@ -408,7 +408,7 @@ class ManagerTestCase(BaseTestCase):
             export_use=mgr_cons.EXPORT_USE_CLONE,
             include_in_export=include_in_export)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_pxe_port_macs_bios(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration = mock.Mock()
@@ -427,7 +427,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertEqual(["68:05:CA:AF:AA:C8"],
                          oem.get_pxe_port_macs_bios(ethernet_interfaces_mac))
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_pxe_port_macs_bios_invalid_system_config_tag(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration = mock.Mock()
@@ -444,7 +444,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertRaises(sushy.exceptions.ExtensionError,
                           oem.get_pxe_port_macs_bios, ethernet_interfaces_mac)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_get_pxe_port_macs_bios_invalid_response(self):
         oem = self.manager.get_oem_extension('Dell')
         oem._export_system_configuration = mock.Mock()
@@ -474,7 +474,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertIsInstance(idrac_card_service,
                               idrac_card.DelliDRACCardService)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_lifecycle_service(self):
         oem = self.manager.get_oem_extension('Dell')
         with open('sushy/tests/oem/dell/unit/json_samples/'
@@ -489,7 +489,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertIsInstance(lifecycle_service,
                               lifecycle.DellLCService)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_job_service(self):
         oem = self.manager.get_oem_extension('Dell')
         with open('sushy/tests/oem/dell/unit/json_samples/'
@@ -504,7 +504,7 @@ class ManagerTestCase(BaseTestCase):
         self.assertIsInstance(job_service,
                               job.DellJobService)
 
-    @mock.patch('sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
+    @mock.patch('ironic.sushy.resources.oem.common._global_extn_mgrs_by_resource', {})
     def test_job_collection(self):
         oem = self.manager.get_oem_extension('Dell')
         with open('sushy/tests/oem/dell/unit/json_samples/'

@@ -15,7 +15,7 @@
 import abc
 import logging
 
-from sushy import exceptions
+from ironic.sushy import exceptions
 
 LOG = logging.getLogger(__name__)
 

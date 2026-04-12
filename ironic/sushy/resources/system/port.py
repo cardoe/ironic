@@ -12,9 +12,9 @@
 # This is referred from Redfish standard schema.
 # https://redfish.dmtf.org/schemas/v1/Port.v1_12_0.json
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.system.network import constants
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.system.network import constants
 
 
 class LLDPReceiveField(base.CompositeField):

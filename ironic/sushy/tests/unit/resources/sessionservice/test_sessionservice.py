@@ -17,10 +17,10 @@ import json
 from unittest import mock
 
 
-from sushy import exceptions
-from sushy.resources.sessionservice import session
-from sushy.resources.sessionservice import sessionservice
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources.sessionservice import session
+from ironic.sushy.resources.sessionservice import sessionservice
+from ironic.sushy.tests.unit import base
 
 
 class SessionServiceTestCase(base.TestCase):

@@ -16,12 +16,12 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.compositionservice import resourceblock
-from sushy.resources.compositionservice import resourcezone
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.compositionservice import resourceblock
+from ironic.sushy.resources.compositionservice import resourcezone
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

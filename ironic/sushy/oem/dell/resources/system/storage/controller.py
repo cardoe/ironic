@@ -12,10 +12,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import sushy
-from sushy.oem.dell.resources.system.storage import constants as s_cons
-from sushy.resources import base
-from sushy.resources.oem import base as oem_base
+from ironic import sushy
+from ironic.sushy.oem.dell.resources.system.storage import constants as s_cons
+from ironic.sushy.resources import base
+from ironic.sushy.resources.oem import base as oem_base
 
 
 class DellStorageController(base.CompositeField):

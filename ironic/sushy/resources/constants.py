@@ -17,8 +17,8 @@
 
 import enum
 
-from sushy.resources.registry import constants as reg_cons
-from sushy.resources.taskservice import constants as ts_cons
+from ironic.sushy.resources.registry import constants as reg_cons
+from ironic.sushy.resources.taskservice import constants as ts_cons
 
 
 class Health(enum.Enum):

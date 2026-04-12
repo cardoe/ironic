@@ -14,9 +14,9 @@
 # This is referred from Redfish standard schema.
 # https://redfish.dmtf.org/schemas/v1/NetworkPort.v1_2_1.json
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.system.network import constants
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.system.network import constants
 
 
 class NetworkPortCollection(base.ResourceCollectionBase):

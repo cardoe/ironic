@@ -13,11 +13,11 @@
 # This is referred from Redfish standard schema.
 # http://redfish.dmtf.org/schemas/v1/Thermal.v1_3_0.json
 
-from sushy.resources import base
-from sushy.resources.chassis.thermal import constants as the_cons
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources.chassis.thermal import constants as the_cons
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy import utils
 
 
 class Sensor(base.ListField):

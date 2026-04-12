@@ -18,14 +18,14 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-from sushy import main
+from ironic.sushy import main
 
 
 class RootTestCase(BaseTestCase):
 
     @mock.patch('sushy.auth.SessionOrBasicAuth', autospec=True)
     @mock.patch('sushy.connector.Connector', autospec=True)
-    @mock.patch('sushy.resources.sessionservice.sessionservice.'
+    @mock.patch('ironic.sushy.resources.sessionservice.sessionservice.'
                 'SessionService', autospec=True)
     def setUp(self, mock_session_service, mock_connector, mock_auth):
         super().setUp()

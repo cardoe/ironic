@@ -21,23 +21,23 @@ import logging
 
 from dateutil import parser
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources.chassis import chassis
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy.resources.manager import manager
-from sushy.resources.manager import virtual_media
-from sushy.resources import settings
-from sushy.resources.system import bios
-from sushy.resources.system import constants as sys_cons
-from sushy.resources.system import ethernet_interface
-from sushy.resources.system import pcie_device
-from sushy.resources.system import processor
-from sushy.resources.system import secure_boot
-from sushy.resources.system import simple_storage as sys_simple_storage
-from sushy.resources.system.storage import storage as sys_storage
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources.chassis import chassis
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.manager import virtual_media
+from ironic.sushy.resources import settings
+from ironic.sushy.resources.system import bios
+from ironic.sushy.resources.system import constants as sys_cons
+from ironic.sushy.resources.system import ethernet_interface
+from ironic.sushy.resources.system import pcie_device
+from ironic.sushy.resources.system import processor
+from ironic.sushy.resources.system import secure_boot
+from ironic.sushy.resources.system import simple_storage as sys_simple_storage
+from ironic.sushy.resources.system.storage import storage as sys_storage
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)

@@ -14,9 +14,9 @@ import json
 from unittest import mock
 
 
-from sushy.resources import constants as res_cons
-from sushy.resources.system import simple_storage
-from sushy.tests.unit import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system import simple_storage
+from ironic.sushy.tests.unit import base
 
 
 class SimpleStorageTestCase(base.TestCase):

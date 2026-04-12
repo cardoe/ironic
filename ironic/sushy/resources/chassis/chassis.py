@@ -15,16 +15,16 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources.chassis import constants as cha_cons
-from sushy.resources.chassis.power import power
-from sushy.resources.chassis.thermal import thermal
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy.resources.manager import manager
-from sushy.resources.system.network import adapter
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources.chassis import constants as cha_cons
+from ironic.sushy.resources.chassis.power import power
+from ironic.sushy.resources.chassis.thermal import thermal
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.system.network import adapter
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

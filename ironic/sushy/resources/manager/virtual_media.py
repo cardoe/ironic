@@ -16,12 +16,12 @@
 from http import client as http_client
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources.certificateservice import certificate
-from sushy.resources import common
-from sushy.resources.manager import constants as mgr_cons
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources.certificateservice import certificate
+from ironic.sushy.resources import common
+from ironic.sushy.resources.manager import constants as mgr_cons
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

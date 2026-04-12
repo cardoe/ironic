@@ -15,14 +15,14 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy.resources.system.storage import constants
-from sushy.resources.system.storage import controller
-from sushy.resources.system.storage import drive
-from sushy.resources.system.storage import volume
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system.storage import constants
+from ironic.sushy.resources.system.storage import controller
+from ironic.sushy.resources.system.storage import drive
+from ironic.sushy.resources.system.storage import volume
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)

@@ -14,9 +14,9 @@ import datetime
 import json
 from unittest import mock
 
-import sushy
-from sushy.resources.certificateservice import certificate
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy.resources.certificateservice import certificate
+from ironic.sushy.tests.unit import base
 
 
 class CertificateTestCase(base.TestCase):

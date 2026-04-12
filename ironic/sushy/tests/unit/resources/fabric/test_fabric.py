@@ -15,10 +15,10 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy.resources.fabric import endpoint
-from sushy.resources.fabric import fabric
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy.resources.fabric import endpoint
+from ironic.sushy.resources.fabric import fabric
+from ironic.sushy.tests.unit import base
 
 
 class FabricTestCase(base.TestCase):

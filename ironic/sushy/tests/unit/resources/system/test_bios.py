@@ -19,13 +19,13 @@ from unittest import mock
 
 from dateutil import parser
 
-from sushy import exceptions
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import attribute_registry
-from sushy.resources.registry import message_registry
-from sushy.resources import settings
-from sushy.resources.system import bios
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import attribute_registry
+from ironic.sushy.resources.registry import message_registry
+from ironic.sushy.resources import settings
+from ironic.sushy.resources.system import bios
+from ironic.sushy.tests.unit import base
 
 
 class BiosTestCase(base.TestCase):

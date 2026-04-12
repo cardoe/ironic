@@ -16,9 +16,9 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.compositionservice import constants
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.compositionservice import constants
 
 LOG = logging.getLogger(__name__)
 

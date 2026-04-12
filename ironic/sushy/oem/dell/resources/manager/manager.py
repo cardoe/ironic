@@ -18,21 +18,21 @@ import subprocess
 import time
 from urllib.parse import urlparse
 
-import sushy
-from sushy.oem.dell import asynchronous
-from sushy.oem.dell import constants
-from sushy.oem.dell.resources import attributes
-from sushy.oem.dell.resources.manager import constants as mgr_cons
-from sushy.oem.dell.resources.manager import idrac_card_service
-from sushy.oem.dell.resources.manager import job_collection
-from sushy.oem.dell.resources.manager import job_service
-from sushy.oem.dell.resources.manager import lifecycle_service
-from sushy.oem.dell import utils
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.oem import base as oem_base
-from sushy.taskmonitor import TaskMonitor
-from sushy import utils as sushy_utils
+from ironic import sushy
+from ironic.sushy.oem.dell import asynchronous
+from ironic.sushy.oem.dell import constants
+from ironic.sushy.oem.dell.resources import attributes
+from ironic.sushy.oem.dell.resources.manager import constants as mgr_cons
+from ironic.sushy.oem.dell.resources.manager import idrac_card_service
+from ironic.sushy.oem.dell.resources.manager import job_collection
+from ironic.sushy.oem.dell.resources.manager import job_service
+from ironic.sushy.oem.dell.resources.manager import lifecycle_service
+from ironic.sushy.oem.dell import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.oem import base as oem_base
+from ironic.sushy.taskmonitor import TaskMonitor
+from ironic.sushy import utils as sushy_utils
 
 
 LOG = logging.getLogger(__name__)

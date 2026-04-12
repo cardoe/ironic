@@ -15,9 +15,9 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import constants as reg_cons
+from ironic.sushy.resources import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import constants as reg_cons
 
 LOG = logging.getLogger(__name__)
 

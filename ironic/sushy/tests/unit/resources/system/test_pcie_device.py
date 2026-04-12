@@ -13,10 +13,10 @@
 import json
 from unittest import mock
 
-from sushy.resources import constants as res_cons
-from sushy.resources.system import constants as sys_cons
-from sushy.resources.system import pcie_device
-from sushy.tests.unit import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system import constants as sys_cons
+from ironic.sushy.resources.system import pcie_device
+from ironic.sushy.tests.unit import base
 
 
 class PCIeDeviceTestCase(base.TestCase):

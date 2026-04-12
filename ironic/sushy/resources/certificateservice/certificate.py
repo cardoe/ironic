@@ -16,8 +16,8 @@
 
 from dateutil import parser
 
-from sushy.resources import base
-from sushy.resources.certificateservice import constants as cert_cons
+from ironic.sushy.resources import base
+from ironic.sushy.resources.certificateservice import constants as cert_cons
 
 
 class Identifier(base.CompositeField):

@@ -16,9 +16,9 @@
 
 import logging
 
-from sushy.resources import base
-from sushy.resources.registry import attribute_registry
-from sushy.resources.registry import message_registry
+from ironic.sushy.resources import base
+from ironic.sushy.resources.registry import attribute_registry
+from ironic.sushy.resources.registry import message_registry
 
 LOG = logging.getLogger(__name__)
 

@@ -21,8 +21,8 @@ from urllib.parse import urljoin
 
 from dateutil import parser
 
-from sushy import exceptions
-from sushy.resources.taskservice import task
+from ironic.sushy import exceptions
+from ironic.sushy.resources.taskservice import task
 
 LOG = logging.getLogger(__name__)
 

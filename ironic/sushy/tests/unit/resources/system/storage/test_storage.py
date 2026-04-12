@@ -14,13 +14,13 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy.resources import constants as res_cons
-from sushy.resources.system.storage import controller
-from sushy.resources.system.storage import drive
-from sushy.resources.system.storage import storage
-from sushy.resources.system.storage import volume
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system.storage import controller
+from ironic.sushy.resources.system.storage import drive
+from ironic.sushy.resources.system.storage import storage
+from ironic.sushy.resources.system.storage import volume
+from ironic.sushy.tests.unit import base
 
 
 STORAGE_DRIVE_FILE_NAMES = [

@@ -17,12 +17,12 @@ import datetime
 import json
 from unittest import mock
 
-import sushy
-from sushy import exceptions
-from sushy.resources import base as resource_base
-from sushy.resources.system import system
-from sushy.tests.unit import base
-from sushy import utils
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base as resource_base
+from ironic.sushy.resources.system import system
+from ironic.sushy.tests.unit import base
+from ironic.sushy import utils
 
 
 class UtilsTestCase(base.TestCase):

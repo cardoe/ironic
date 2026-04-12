@@ -17,10 +17,10 @@ from unittest import mock
 
 from oslotest.base import BaseTestCase
 
-from sushy import exceptions
-from sushy.oem.dell.resources.system import constants as sys_cons
-from sushy.oem.dell.resources.system import raid_service
-from sushy.oem.dell.resources.system import system as oem_system
+from ironic.sushy import exceptions
+from ironic.sushy.oem.dell.resources.system import constants as sys_cons
+from ironic.sushy.oem.dell.resources.system import raid_service
+from ironic.sushy.oem.dell.resources.system import system as oem_system
 
 
 class SystemTestCase(BaseTestCase):

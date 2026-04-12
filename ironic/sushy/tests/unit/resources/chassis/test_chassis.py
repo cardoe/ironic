@@ -15,13 +15,13 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy import exceptions
-from sushy.resources.chassis import chassis
-from sushy.resources.manager import manager
-from sushy.resources.system.network import adapter
-from sushy.resources.system import system
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.chassis import chassis
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.system.network import adapter
+from ironic.sushy.resources.system import system
+from ironic.sushy.tests.unit import base
 
 
 class ChassisTestCase(base.TestCase):

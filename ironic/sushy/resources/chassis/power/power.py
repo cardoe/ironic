@@ -13,11 +13,11 @@
 # This is referred from Redfish standard schema.
 # http://redfish.dmtf.org/schemas/v1/Power.v1_3_0.json
 
-from sushy.resources import base
-from sushy.resources.chassis.power import constants as pow_cons
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy import utils
+from ironic.sushy.resources import base
+from ironic.sushy.resources.chassis.power import constants as pow_cons
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy import utils
 
 
 class InputRangeListField(base.ListField):

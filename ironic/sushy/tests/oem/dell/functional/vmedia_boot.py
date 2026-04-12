@@ -13,8 +13,8 @@ import logging
 import os
 import sys
 
-import sushy
-from sushy.oem.dell import utils
+from ironic import sushy
+from ironic.sushy.oem.dell import utils
 
 USERNAME = 'root'
 PASSWORD = 'calvin'

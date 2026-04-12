@@ -17,11 +17,11 @@ from unittest import mock
 
 import requests
 
-from sushy import exceptions
-from sushy.resources import base as resource_base
-from sushy.resources.taskservice import task
-from sushy import taskmonitor
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base as resource_base
+from ironic.sushy.resources.taskservice import task
+from ironic.sushy import taskmonitor
+from ironic.sushy.tests.unit import base
 
 
 class TaskMonitorTestCase(base.TestCase):

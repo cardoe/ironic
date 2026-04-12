@@ -18,19 +18,19 @@ from unittest import mock
 
 from dateutil import parser
 
-import sushy
-from sushy import exceptions
-from sushy.resources.chassis import chassis
-from sushy.resources import constants as res_cons
-from sushy.resources.manager import manager
-from sushy.resources.manager import virtual_media
-from sushy.resources.oem import fake
-from sushy.resources.system import bios
-from sushy.resources.system import processor
-from sushy.resources.system import secure_boot
-from sushy.resources.system import simple_storage
-from sushy.resources.system import system
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.chassis import chassis
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.manager import virtual_media
+from ironic.sushy.resources.oem import fake
+from ironic.sushy.resources.system import bios
+from ironic.sushy.resources.system import processor
+from ironic.sushy.resources.system import secure_boot
+from ironic.sushy.resources.system import simple_storage
+from ironic.sushy.resources.system import system
+from ironic.sushy.tests.unit import base
 
 
 class SystemTestCase(base.TestCase):
@@ -1213,7 +1213,7 @@ class SystemTestCase(base.TestCase):
                 exceptions.MissingAttributeError, 'attribute Storage'):
             self.sys_inst.storage
 
-    @mock.patch('sushy.resources.system.storage.storage.StorageCollection',
+    @mock.patch('ironic.sushy.resources.system.storage.storage.StorageCollection',
                 autospec=True)
     def test_storage_expanded(self, mock_storage_collection):
         # Test accessing expanded storage property
@@ -1226,7 +1226,7 @@ class SystemTestCase(base.TestCase):
             root=None)
         self.assertIsNotNone(result)
 
-    @mock.patch('sushy.resources.system.simple_storage.'
+    @mock.patch('ironic.sushy.resources.system.simple_storage.'
                 'SimpleStorageCollection', autospec=True)
     def test_simple_storage_expanded(self, mock_simple_storage_collection):
         # Test accessing expanded simple_storage property

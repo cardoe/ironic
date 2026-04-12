@@ -13,10 +13,10 @@
 import json
 from unittest import mock
 
-from sushy.resources import constants as res_cons
-from sushy.resources.system.network import constants as net_cons
-from sushy.resources.system import port
-from sushy.tests.unit import base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.system.network import constants as net_cons
+from ironic.sushy.resources.system import port
+from ironic.sushy.tests.unit import base
 
 
 class PortTestCase(base.TestCase):

@@ -12,8 +12,8 @@
 
 from dateutil import parser
 
-from sushy.resources import base
-from sushy.resources import constants
+from ironic.sushy.resources import base
+from ironic.sushy.resources import constants
 
 
 class IdRefField(base.CompositeField):

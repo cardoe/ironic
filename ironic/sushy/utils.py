@@ -18,8 +18,8 @@ import functools
 import logging
 import threading
 
-from sushy import exceptions
-from sushy.resources import constants as res_cons
+from ironic.sushy import exceptions
+from ironic.sushy.resources import constants as res_cons
 
 LOG = logging.getLogger(__name__)
 

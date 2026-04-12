@@ -17,11 +17,11 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.eventservice import constants
-from sushy.resources.eventservice import eventdestination
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.eventservice import constants
+from ironic.sushy.resources.eventservice import eventdestination
 
 LOG = logging.getLogger(__name__)
 

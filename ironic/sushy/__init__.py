@@ -15,20 +15,20 @@ import logging
 
 import pbr.version
 
-from sushy.main import Sushy
-from sushy.resources.certificateservice.constants import * # noqa
-from sushy.resources.chassis.constants import *  # noqa
-from sushy.resources.constants import *  # noqa
-from sushy.resources.eventservice.constants import * # noqa
-from sushy.resources.fabric.constants import *  # noqa
-from sushy.resources.ipaddresses import *  # noqa
-from sushy.resources.manager.constants import *  # noqa
-from sushy.resources.registry.constants import *  # noqa
-from sushy.resources.system.constants import *  # noqa
-from sushy.resources.system.network.constants import *  # noqa
-from sushy.resources.system.storage.constants import *  # noqa
-from sushy.resources.updateservice.constants import *  # noqa
-from sushy.resources.taskservice.constants import *  # noqa
+from ironic.sushy.main import Sushy
+from ironic.sushy.resources.certificateservice.constants import * # noqa
+from ironic.sushy.resources.chassis.constants import *  # noqa
+from ironic.sushy.resources.constants import *  # noqa
+from ironic.sushy.resources.eventservice.constants import * # noqa
+from ironic.sushy.resources.fabric.constants import *  # noqa
+from ironic.sushy.resources.ipaddresses import *  # noqa
+from ironic.sushy.resources.manager.constants import *  # noqa
+from ironic.sushy.resources.registry.constants import *  # noqa
+from ironic.sushy.resources.system.constants import *  # noqa
+from ironic.sushy.resources.system.network.constants import *  # noqa
+from ironic.sushy.resources.system.storage.constants import *  # noqa
+from ironic.sushy.resources.updateservice.constants import *  # noqa
+from ironic.sushy.resources.taskservice.constants import *  # noqa
 
 __all__ = ('Sushy',)
 __version__ = pbr.version.VersionInfo(

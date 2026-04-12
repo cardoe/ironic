@@ -13,11 +13,11 @@
 import json
 from unittest import mock
 
-import sushy
-from sushy import exceptions
-from sushy.resources.certificateservice import certificate
-from sushy.resources.certificateservice import certificateservice
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.certificateservice import certificate
+from ironic.sushy.resources.certificateservice import certificateservice
+from ironic.sushy.tests.unit import base
 
 
 class CertificateServiceTestCase(base.TestCase):

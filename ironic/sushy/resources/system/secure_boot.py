@@ -15,12 +15,12 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources.system import constants
-from sushy.resources.system import secure_boot_database
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources.system import constants
+from ironic.sushy.resources.system import secure_boot_database
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

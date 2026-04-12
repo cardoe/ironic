@@ -14,9 +14,9 @@ import json
 from unittest import mock
 
 
-from sushy.resources.oem import fake
-from sushy.resources.system import system
-from sushy.tests.unit import base
+from ironic.sushy.resources.oem import fake
+from ironic.sushy.resources.system import system
+from ironic.sushy.tests.unit import base
 
 
 class FakeOEMSystemExtensionTestCase(base.TestCase):

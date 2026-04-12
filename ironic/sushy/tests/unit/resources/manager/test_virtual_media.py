@@ -16,12 +16,12 @@ import json
 import types
 from unittest import mock
 
-import sushy
-from sushy import exceptions
-from sushy.resources.certificateservice import certificate
-from sushy.resources.manager import constants as mgr_cons
-from sushy.resources.manager import virtual_media
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.certificateservice import certificate
+from ironic.sushy.resources.manager import constants as mgr_cons
+from ironic.sushy.resources.manager import virtual_media
+from ironic.sushy.tests.unit import base
 
 
 class _FakeHTTPError(Exception):

@@ -17,10 +17,10 @@ import logging
 
 from dateutil import parser
 
-from sushy.resources import base
-from sushy.resources import common
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import message_registry
+from ironic.sushy.resources import base
+from ironic.sushy.resources import common
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import message_registry
 
 # Settings update statuses
 

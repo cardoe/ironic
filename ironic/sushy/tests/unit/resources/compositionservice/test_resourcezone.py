@@ -14,10 +14,10 @@
 import json
 from unittest import mock
 
-from sushy import exceptions
-from sushy.resources.compositionservice import resourcezone
-from sushy.resources import constants as res_cons
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources.compositionservice import resourcezone
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.tests.unit import base
 
 
 class ResourceZoneTestCase(base.TestCase):

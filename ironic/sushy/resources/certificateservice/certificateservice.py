@@ -10,12 +10,12 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources.certificateservice import certificate
-from sushy.resources.certificateservice import constants
-from sushy.resources import common
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources.certificateservice import certificate
+from ironic.sushy.resources.certificateservice import constants
+from ironic.sushy.resources import common
+from ironic.sushy import utils
 
 
 class ActionsField(base.CompositeField):

@@ -14,11 +14,11 @@ from unittest import mock
 
 import stevedore
 
-from sushy import exceptions
-from sushy.resources import base as res_base
-from sushy.resources.oem import base as oem_base
-from sushy.resources.oem import common as oem_common
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base as res_base
+from ironic.sushy.resources.oem import base as oem_base
+from ironic.sushy.resources.oem import common as oem_common
+from ironic.sushy.tests.unit import base
 
 
 class ContosoResourceOEMExtension(oem_base.OEMResourceBase):
@@ -71,7 +71,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
     @mock.patch.dict(oem_common._global_extn_mgrs_by_resource, {}, clear=True)
     @mock.patch.object(stevedore, 'ExtensionManager', autospec=True)
     def test__create_extension_manager(self, ExtensionManager_mock):
-        system_resource_oem_ns = 'sushy.resources.system.oems'
+        system_resource_oem_ns = 'ironic.sushy.resources.system.oems'
         ExtensionManager_mock.return_value = self.fake_ext_mgr
 
         result = oem_common._create_extension_manager(
@@ -85,7 +85,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
     @mock.patch.dict(oem_common._global_extn_mgrs_by_resource, {}, clear=True)
     @mock.patch.object(stevedore, 'ExtensionManager', autospec=True)
     def test__create_extension_manager_no_extns(self, ExtensionManager_mock):
-        system_resource_oem_ns = 'sushy.resources.system.oems'
+        system_resource_oem_ns = 'ironic.sushy.resources.system.oems'
         ExtensionManager_mock.return_value.names.return_value = []
 
         self.assertRaisesRegex(
@@ -101,7 +101,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
         result = oem_common._get_extension_manager_of_resource('system')
         self.assertEqual(self.fake_ext_mgr, result)
         ExtensionManager_mock.assert_called_once_with(
-            namespace='sushy.resources.system.oems',
+            namespace='ironic.sushy.resources.system.oems',
             propagate_map_exceptions=True,
             on_load_failure_callback=oem_common._raise)
         ExtensionManager_mock.reset_mock()
@@ -109,7 +109,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
         result = oem_common._get_extension_manager_of_resource('manager')
         self.assertEqual(self.fake_ext_mgr, result)
         ExtensionManager_mock.assert_called_once_with(
-            namespace='sushy.resources.manager.oems',
+            namespace='ironic.sushy.resources.manager.oems',
             propagate_map_exceptions=True,
             on_load_failure_callback=oem_common._raise)
         for name, extension in result.items():
@@ -131,7 +131,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
             'system', 'Faux', resource_instance_mock)
         self.assertEqual(result, oem_resource_mock)
         ExtensionManager_mock.assert_called_once_with(
-            'sushy.resources.system.oems', propagate_map_exceptions=True,
+            'ironic.sushy.resources.system.oems', propagate_map_exceptions=True,
             on_load_failure_callback=oem_common._raise)
         ExtensionManager_mock.reset_mock()
 
@@ -146,7 +146,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
             'manager', 'Faux_dup', resource_instance_mock)
         self.assertEqual(result, oem_resource_mock)
         ExtensionManager_mock.assert_called_once_with(
-            'sushy.resources.manager.oems', propagate_map_exceptions=True,
+            'ironic.sushy.resources.manager.oems', propagate_map_exceptions=True,
             on_load_failure_callback=oem_common._raise)
         ExtensionManager_mock.reset_mock()
 
@@ -170,7 +170,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
             'No sushy.resources.system.oems OEM extension found '
             'by name "faux"',
             oem_common.get_resource_extension_by_vendor,
-            'sushy.resources.system.oems', 'Faux', resource_instance_mock)
+            'ironic.sushy.resources.system.oems', 'Faux', resource_instance_mock)
 
     @mock.patch.dict(oem_common._global_extn_mgrs_by_resource, {}, clear=True)
     @mock.patch.object(stevedore, 'ExtensionManager', autospec=True)
@@ -190,7 +190,7 @@ class ResourceOEMCommonMethodsTestCase(base.TestCase):
             'system', 'Faux', resource_instance_mock)
         self.assertEqual(result, oem_resource_mock)
         ExtensionManager_mock.assert_called_once_with(
-            'sushy.resources.system.oems', propagate_map_exceptions=True,
+            'ironic.sushy.resources.system.oems', propagate_map_exceptions=True,
             on_load_failure_callback=oem_common._raise)
         ExtensionManager_mock.reset_mock()
 

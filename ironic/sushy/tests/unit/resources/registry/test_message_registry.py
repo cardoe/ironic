@@ -16,13 +16,13 @@
 import json
 from unittest import mock
 
-from sushy import exceptions
-from sushy.resources import base as sushy_base
-from sushy.resources import constants as res_cons
-from sushy.resources.registry import attribute_registry
-from sushy.resources.registry import constants as reg_cons
-from sushy.resources.registry import message_registry
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base as sushy_base
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.registry import attribute_registry
+from ironic.sushy.resources.registry import constants as reg_cons
+from ironic.sushy.resources.registry import message_registry
+from ironic.sushy.tests.unit import base
 
 
 class MessageRegistryTestCase(base.TestCase):

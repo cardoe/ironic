@@ -14,8 +14,8 @@ import logging
 
 import stevedore
 
-from sushy import exceptions
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy import utils
 
 
 LOG = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def _get_extension_manager_of_resource(resource_name: str):
     global _global_extn_mgrs_by_resource
 
     if resource_name not in _global_extn_mgrs_by_resource:
-        resource_namespace = f'sushy.resources.{resource_name}.oems'
+        resource_namespace = f'ironic.sushy.resources.{resource_name}.oems'
         _global_extn_mgrs_by_resource[resource_name] = (
             _create_extension_manager(resource_namespace, resource_name)
         )

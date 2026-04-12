@@ -14,14 +14,14 @@ import json
 from unittest import mock
 
 
-import sushy
-from sushy import exceptions
-from sushy.resources.chassis import chassis
-from sushy.resources import constants as res_cons
-from sushy.resources.manager import manager
-from sushy.resources.manager import virtual_media
-from sushy.resources.system import system
-from sushy.tests.unit import base
+from ironic import sushy
+from ironic.sushy import exceptions
+from ironic.sushy.resources.chassis import chassis
+from ironic.sushy.resources import constants as res_cons
+from ironic.sushy.resources.manager import manager
+from ironic.sushy.resources.manager import virtual_media
+from ironic.sushy.resources.system import system
+from ironic.sushy.tests.unit import base
 
 
 class ManagerTestCase(base.TestCase):

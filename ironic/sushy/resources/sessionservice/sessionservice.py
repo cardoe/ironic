@@ -18,10 +18,10 @@
 
 import logging
 
-from sushy import exceptions
-from sushy.resources import base
-from sushy.resources.sessionservice import session
-from sushy import utils
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base
+from ironic.sushy.resources.sessionservice import session
+from ironic.sushy import utils
 
 LOG = logging.getLogger(__name__)
 

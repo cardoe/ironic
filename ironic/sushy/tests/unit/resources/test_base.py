@@ -21,9 +21,9 @@ import json
 from unittest import mock
 import zipfile
 
-from sushy import exceptions
-from sushy.resources import base as resource_base
-from sushy.tests.unit import base
+from ironic.sushy import exceptions
+from ironic.sushy.resources import base as resource_base
+from ironic.sushy.tests.unit import base
 
 
 BASE_RESOURCE_JSON = {
