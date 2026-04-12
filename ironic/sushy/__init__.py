@@ -32,7 +32,7 @@ from ironic.sushy.resources.taskservice.constants import *  # noqa
 
 __all__ = ('Sushy',)
 __version__ = pbr.version.VersionInfo(
-    'sushy').version_string()
+    'ironic').version_string()
 
 # Set the default handler to avoid "No handler found" warnings. See:
 # https://docs.python.org/3/howto/logging.html#library-config
