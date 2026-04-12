@@ -14,7 +14,7 @@
 #    under the License.
 
 from oslo_log import log
-import sushy
+from ironic import sushy
 import tenacity
 
 from ironic.common import boot_devices

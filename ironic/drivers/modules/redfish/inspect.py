@@ -16,7 +16,7 @@ Redfish Inspect Interface
 from oslo_log import log
 from oslo_utils import netutils
 from oslo_utils import units
-import sushy
+from ironic import sushy
 
 from ironic.common import boot_modes
 from ironic.common import exception

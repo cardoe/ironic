@@ -15,7 +15,7 @@
 # under the License.
 
 from oslo_log import log
-import sushy
+from ironic import sushy
 
 from ironic.common import boot_devices
 from ironic.drivers.modules.drac import utils as drac_utils

@@ -20,7 +20,7 @@ Test class for DRAC boot interface
 
 from unittest import mock
 
-import sushy
+from ironic import sushy
 
 from ironic.common import boot_devices
 from ironic.conductor import task_manager

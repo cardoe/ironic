@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from oslo_log import log
 from oslo_utils import timeutils
-import sushy
+from ironic import sushy
 
 from ironic.common import async_steps
 from ironic.common import exception

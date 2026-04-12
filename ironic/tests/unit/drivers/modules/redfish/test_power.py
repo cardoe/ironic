@@ -17,7 +17,7 @@ import time
 from unittest import mock
 
 from oslo_service import loopingcall as lc
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.common import states

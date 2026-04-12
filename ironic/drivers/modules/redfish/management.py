@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 from dateutil import parser
 from oslo_log import log
 from oslo_utils import timeutils
-import sushy
+from ironic import sushy
 import tenacity
 
 from ironic.common import boot_devices

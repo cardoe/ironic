@@ -18,7 +18,7 @@ import math
 
 from oslo_log import log
 from oslo_utils import units
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.common.i18n import _

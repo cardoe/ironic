@@ -25,7 +25,7 @@ import json
 import jsonschema
 from jsonschema import exceptions as json_schema_exc
 from oslo_log import log as logging
-import sushy
+from ironic import sushy
 
 from ironic.common import boot_devices
 from ironic.common import exception

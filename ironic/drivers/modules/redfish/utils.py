@@ -23,7 +23,7 @@ from oslo_log import log
 from oslo_utils import netutils
 from oslo_utils import strutils
 import rfc3986
-import sushy
+from ironic import sushy
 import tenacity
 
 from ironic.common import exception

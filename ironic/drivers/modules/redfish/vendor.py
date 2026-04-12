@@ -17,7 +17,7 @@ Vendor Interface for Redfish drivers and its supporting methods.
 
 from oslo_log import log
 import rfc3986
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.common.i18n import _

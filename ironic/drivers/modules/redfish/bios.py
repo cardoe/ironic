@@ -13,7 +13,7 @@
 #    under the License.
 
 from oslo_log import log
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.common.i18n import _

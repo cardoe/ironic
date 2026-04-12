@@ -15,7 +15,7 @@
 
 from unittest import mock
 
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.conductor import task_manager

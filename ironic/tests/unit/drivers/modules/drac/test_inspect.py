@@ -18,7 +18,7 @@ Test class for DRAC inspection interface
 from unittest import mock
 
 from oslo_utils import units
-import sushy
+from ironic import sushy
 
 from ironic.common import states
 from ironic.conductor import task_manager

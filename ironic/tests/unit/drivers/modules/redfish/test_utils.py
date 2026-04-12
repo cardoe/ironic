@@ -21,7 +21,7 @@ from unittest import mock
 
 from oslo_config import cfg
 import requests
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.drivers.modules.redfish import utils as redfish_utils

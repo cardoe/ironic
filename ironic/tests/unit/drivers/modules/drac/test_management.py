@@ -23,7 +23,7 @@ Test class for DRAC management interface
 import json
 from unittest import mock
 
-import sushy
+from ironic import sushy
 
 import ironic.common.boot_devices
 from ironic.common import exception

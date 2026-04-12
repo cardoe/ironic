@@ -17,7 +17,7 @@ Test class for DRAC RAID interface
 
 from unittest import mock
 
-import sushy
+from ironic import sushy
 import tenacity
 
 from ironic.common import exception
@@ -33,7 +33,7 @@ from ironic.drivers.modules.redfish import utils as redfish_utils
 from ironic.tests.unit.drivers.modules.drac import utils as test_utils
 from ironic.tests.unit.objects import utils as obj_utils
 
-from sushy.oem import dell as sushy_oem_idrac
+from ironic.sushy.oem import dell as sushy_oem_idrac
 
 INFO_DICT = test_utils.INFO_DICT
 

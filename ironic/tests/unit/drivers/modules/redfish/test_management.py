@@ -18,9 +18,9 @@ from unittest import mock
 
 from oslo_utils import timeutils
 from oslo_utils import units
-import sushy
-from sushy.resources.chassis.thermal import constants as sushy_thermal_const
-from sushy.resources import constants as sushy_constants
+from ironic import sushy
+from ironic.sushy.resources.chassis.thermal import constants as sushy_thermal_const
+from ironic.sushy.resources import constants as sushy_constants
 
 from ironic.common import boot_devices
 from ironic.common import boot_modes

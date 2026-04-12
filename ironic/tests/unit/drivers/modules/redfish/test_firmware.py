@@ -18,7 +18,7 @@ from unittest import mock
 
 from oslo_config import cfg
 from oslo_utils import timeutils
-import sushy
+from ironic import sushy
 
 from ironic.common import exception
 from ironic.common import states
