@@ -1,0 +1,49 @@
+{
+    "@odata.type": "#MessageRegistry.v1_1_1.MessageRegistry",
+    "Id": "Test.1.1.1",
+    "Name": "Test Message Registry",
+    "Language": "en",
+    "Description": "This registry defines messages for sushy testing",
+    "RegistryPrefix": "Test",
+    "RegistryVersion":  "1.1.1",
+    "OwningEntity": "sushy",
+    "Messages": {
+        "Success": {
+            "Description": "Everything OK",
+            "Message": "Everything done successfully.",
+            "Severity": "OK",
+            "NumberOfArgs": 0,
+            "Resolution": "None"
+        },
+        "Failed": {
+            "Description": "Nothing is OK",
+            "Message": "The property %1 broke everything.",
+            "Severity": "Critical",
+            "NumberOfArgs": 1,
+            "ParamTypes": [
+                "string"
+            ],
+            "Resolution": "Panic"
+        },
+        "TooBig": {
+            "Description": "Value too big",
+            "Message": "Property's %1 value cannot be greater than %2.",
+            "Severity": "Warning",
+            "NumberOfArgs": 2,
+            "ParamTypes": [
+                "string",
+                "number"
+            ],
+            "Resolution": "Try again"
+        },
+        "MissingThings": {
+            "Message": "Property's %1 value cannot be less than %2.",
+            "NumberOfArgs": 2,
+            "ParamTypes": [
+                "string",
+                "number"
+            ],
+            "Resolution": "Try Later"
+        }
+    }
+}

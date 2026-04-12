@@ -1,0 +1,28 @@
+{
+    "@odata.type": "#Bios.v1_0_3.Bios",
+    "Id": "Settings",
+    "Name": "BIOS Configuration Pending Settings",
+    "AttributeRegistry": "BiosAttributeRegistryP89.v1_0_0",
+    "Attributes": {
+        "AdminPhone": "(404) 555-1212",
+        "BootMode": "Uefi",
+        "EmbeddedSata": "Ahci",
+        "NicBoot1": "NetworkBoot",
+        "NicBoot2": "NetworkBoot",
+        "PowerProfile": "MaxPerf",
+        "ProcCoreDisable": 0,
+        "ProcHyperthreading": "Enabled",
+        "ProcTurboMode": "Disabled",
+        "UsbControl": "UsbEnabled"
+    },
+    "@Redfish.SettingsApplyTime": {
+        "@odata.type": "#Settings.v1_1_0.PreferredApplyTime",
+        "ApplyTime": "OnReset",
+        "ApplyTime@Redfish.AllowableValues": [ "OnReset", "Immediate", "AtMaintenanceWindowStart", "InMaintenanceWindowOnReset" ],
+        "MaintenanceWindowStartTime": "2017-05-03T23:12:37-05:00",
+        "MaintenanceWindowDurationInSeconds": 600
+    },
+    "@odata.context": "/redfish/v1/$metadata#Bios.Bios",
+    "@odata.id": "/redfish/v1/Systems/437XR1138R2/BIOS/Settings",
+    "@Redfish.Copyright": "Copyright 2014-2016 Distributed Management Task Force, Inc. (DMTF). For the full DMTF copyright policy, see http://www.dmtf.org/about/policies/copyright."
+}
