@@ -17,6 +17,7 @@ Subcommands:
 """
 
 import argparse
+import copy
 import json
 import sys
 import yaml
@@ -25,6 +26,7 @@ import operator as _operator
 
 from ironic.common.inspection_rules import actions
 from ironic.common.inspection_rules import engine
+from ironic.common.inspection_rules import utils as ir_utils
 
 
 def _get_nested(obj, path):
@@ -62,6 +64,92 @@ _PATH_OPS = {
     "contains":     _operator.contains,
     "not_contains": lambda a, b: not _operator.contains(a, b),
 }
+
+
+def _parse_capabilities(node):
+    """Parse properties.capabilities string into a dict."""
+    caps_str = ((node.get("properties") or {}).get("capabilities") or "")
+    result = {}
+    for item in caps_str.split(","):
+        item = item.strip()
+        if ":" in item:
+            k, _, v = item.partition(":")
+            result[k.strip()] = v.strip()
+    return result
+
+
+def _write_capabilities(node, caps):
+    """Write a capabilities dict back to properties.capabilities."""
+    node.setdefault("properties", {})["capabilities"] = ",".join(
+        f"{k}:{v}" for k, v in sorted(caps.items())
+    )
+
+
+def _apply_node_action(node, op, args):
+    """Apply one action's effect to a node dict in-place.
+
+    Only handles actions that modify the node itself. Port actions,
+    plugin-data actions, log, fail, and api-call are intentionally
+    ignored here since they do not affect node state.
+    """
+    if op == "set-attribute":
+        parts = ir_utils.normalize_path(args["path"])
+        if len(parts) == 1:
+            node[parts[0]] = args["value"]
+        else:
+            current = node.setdefault(parts[0], {})
+            for part in parts[1:-1]:
+                current = current.setdefault(part, {})
+            current[parts[-1]] = args["value"]
+
+    elif op == "extend-attribute":
+        parts = ir_utils.normalize_path(args["path"])
+        if len(parts) == 1:
+            lst = node.setdefault(parts[0], [])
+        else:
+            current = node.setdefault(parts[0], {})
+            for part in parts[1:-1]:
+                current = current.setdefault(part, {})
+            lst = current.setdefault(parts[-1], [])
+        if not args.get("unique") or args["value"] not in lst:
+            lst.append(args["value"])
+
+    elif op == "del-attribute":
+        parts = ir_utils.normalize_path(args["path"])
+        if len(parts) == 1:
+            node.pop(parts[0], None)
+        else:
+            try:
+                current = node[parts[0]]
+                for part in parts[1:-1]:
+                    current = current[part]
+                current.pop(parts[-1], None)
+            except (KeyError, TypeError):
+                pass
+
+    elif op == "add-trait":
+        name = args.get("name")
+        if name:
+            traits = node.setdefault("traits", [])
+            if name not in traits:
+                traits.append(name)
+
+    elif op == "remove-trait":
+        name = args.get("name")
+        if name:
+            traits = node.get("traits", [])
+            if name in traits:
+                traits.remove(name)
+
+    elif op == "set-capability":
+        caps = _parse_capabilities(node)
+        caps[args["name"]] = str(args["value"])
+        _write_capabilities(node, caps)
+
+    elif op == "unset-capability":
+        caps = _parse_capabilities(node)
+        caps.pop(args["name"], None)
+        _write_capabilities(node, caps)
 
 
 class FakeNode:
@@ -264,6 +352,19 @@ class InspectionRulesEvaluator:
             "node": self.node_data,
         }
 
+    def build_result_node(self):
+        """Return node_data with all matched rule actions applied."""
+        node = copy.deepcopy(self.node_data)
+        for rule_result in self.results:
+            if not rule_result["matched"]:
+                continue
+            for action in rule_result["actions"]:
+                try:
+                    _apply_node_action(node, action["op"], action["args"])
+                except Exception:
+                    pass  # errors were already recorded during evaluation
+        return node
+
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
@@ -425,9 +526,9 @@ class InspectionRulesEvaluator:
             summary += f", {errors} error(s)"
         print(summary)
 
-    def output_json(self, result_dict):
-        """Output the full evaluation result in JSON format."""
-        print(json.dumps(result_dict, indent=2, default=str))
+    def output_json(self, node):
+        """Output the resulting node object as JSON."""
+        print(json.dumps(node, indent=2, default=str))
 
     def run(self):
         """Run the complete evaluation process."""
@@ -453,7 +554,7 @@ class InspectionRulesEvaluator:
         exit_code = 1 if (eval_errors or validation_failures) else 0
 
         if self.json_output:
-            self.output_json(result_dict)
+            self.output_json(self.build_result_node())
         else:
             self.print_results()
             if self.validate_file:
@@ -467,7 +568,7 @@ def _run_rules(args):
         args.node_file,
         args.inventory_file,
         args.rules_file,
-        json_output=args.json,
+        json_output=args.output_json,
         validate_file=args.validate,
     )
     return evaluator.run()
@@ -490,8 +591,8 @@ Examples:
   openstack baremetal node inventory save --file inventory.json <node-id>
   %(prog)s node.yaml inventory.json rules.yaml
 
-  # JSON output for scripting
-  %(prog)s --json node.yaml inventory.json rules.yaml > results.json
+  # Output the resulting node as JSON after rules are applied
+  %(prog)s --output-json node.yaml inventory.json rules.yaml > result_node.json
 
   # Validate expected outcomes (exits non-zero on failure)
   %(prog)s node.yaml inventory.json rules.yaml --validate checks.yaml
@@ -531,8 +632,9 @@ Validation file format (YAML list):
         help="YAML file containing inspection rules",
     )
     parser.add_argument(
-        "--json", action="store_true",
-        help="output the full evaluation result in JSON format",
+        "--output-json", action="store_true",
+        help="output the resulting node object as JSON after applying "
+             "all matched rule actions",
     )
     parser.add_argument(
         "--validate",
