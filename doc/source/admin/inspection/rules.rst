@@ -174,3 +174,127 @@ level within the structure will be recursively formatted as well:
           path: "/properties/root_device"
           value: '{"serial": "{data[root_device][serial]}"}'
 
+Testing Rules with ironic-sim
+------------------------------
+
+The ``ironic-sim`` command is installed alongside ironic and provides a
+``rules`` subcommand for testing inspection rules against captured node and
+hardware inventory data, without running a full inspection.
+
+Capturing the input data
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Collect the three input files from a real node before or after inspection:
+
+.. code-block:: bash
+
+    # Node object
+    openstack baremetal node show <node-id> -f yaml > node.yaml
+
+    # Hardware inventory and plugin data
+    openstack baremetal node inventory save --file inventory.json <node-id>
+
+    # Inspection rules (built-in file or a custom YAML file)
+    # e.g. /etc/ironic/inspection_rules.yaml
+
+Running the simulator
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    ironic-sim rules node.yaml inventory.json rules.yaml
+
+The output lists each rule in priority order, showing whether it matched,
+which conditions passed or failed, and which actions would be executed:
+
+.. code-block:: text
+
+    Node:        node.yaml
+    Inventory:   inventory.json
+    Rules file:  rules.yaml
+
+    Rule: Set CPU architecture [MATCH]
+      UUID: abc-123, Priority: 100
+      Condition 1 [eq]: PASSED
+      Action 1 [set-attribute]: {'path': 'properties/cpu_arch', 'value': 'x86_64'}
+
+    Rule: Add NUMA trait [SKIP]
+      UUID: def-456, Priority: 50
+      Condition 1 [eq]: FAILED
+
+    Summary: 1/2 rules matched
+
+Outputting the resulting node
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``--output-json`` to emit the node object as it would look after all
+matched rule actions have been applied. This is useful for scripting or
+piping the result to another tool:
+
+.. code-block:: bash
+
+    ironic-sim rules --output-json node.yaml inventory.json rules.yaml \
+        > result_node.json
+
+The output is the node dict with all matched ``set-attribute``,
+``extend-attribute``, ``del-attribute``, ``add-trait``, ``remove-trait``,
+``set-capability``, and ``unset-capability`` actions applied.
+
+Validating expected outcomes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``--validate`` with a YAML file containing a list of checks to assert
+expected outcomes. The command exits non-zero if any check fails, making
+it suitable for use in CI pipelines:
+
+.. code-block:: bash
+
+    ironic-sim rules node.yaml inventory.json rules.yaml \
+        --validate checks.yaml
+
+The validation file is a YAML list. Four check types are available:
+
+**has_trait** — passes if the named trait is already on the node or would
+be added by a matched ``add-trait`` action:
+
+.. code-block:: yaml
+
+    - description: "node gains CUSTOM_FOO trait"
+      type: has_trait
+      trait: CUSTOM_FOO
+
+**rule_matched** — passes if a specific rule matched, identified by UUID,
+description, or both:
+
+.. code-block:: yaml
+
+    - description: "CPU architecture rule matched"
+      type: rule_matched
+      rule_uuid: "abc-123-def"
+      rule_description: "Set CPU architecture"  # optional
+
+**no_errors** — passes if there were no evaluation errors:
+
+.. code-block:: yaml
+
+    - description: "no evaluation errors"
+      type: no_errors
+
+**path** — navigates the full evaluation result by dot-separated path and
+applies a comparison operator. Supported operators: ``eq``, ``ne``, ``gt``,
+``gte``, ``lt``, ``lte``, ``contains``, ``not_contains``:
+
+.. code-block:: yaml
+
+    - description: "at least two rules matched"
+      type: path
+      path: "summary.matched_rules"
+      op: gte
+      value: 2
+
+    - description: "CUSTOM_FOO in result node traits"
+      type: path
+      path: "node.traits"
+      op: contains
+      value: CUSTOM_FOO
+
