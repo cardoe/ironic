@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
@@ -11,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""Inspection Rules Tester - Test inspection rules against hardware inventory.
+"""ironic-sim - Ironic simulator and testing tools.
 
-This tool runs the inspection rules evaluation process to help test and
-debug inspection rules before deploying them to a production environment.
+Subcommands:
+  rules   Test inspection rules against hardware inventory data.
 """
 
 import argparse
@@ -191,6 +190,20 @@ class InspectionRulesEvaluator:
 
         return result
 
+    def _build_result_dict(self):
+        """Build the full evaluation result dict."""
+        return {
+            "summary": {
+                "total_rules": len(self.results),
+                "matched_rules": sum(1 for r in self.results if r["matched"]),
+                "total_errors": sum(len(r["errors"]) for r in self.results),
+            },
+            "rules": self.results,
+            "inventory": self.inventory,
+            "plugin_data": self.plugin_data,
+            "node": self.node_data,
+        }
+
     def print_results(self):
         """Print all results in human-readable form."""
         print(f"Node:        {self.node_file}")
@@ -226,20 +239,9 @@ class InspectionRulesEvaluator:
             summary += f", {errors} error(s)"
         print(summary)
 
-    def output_json(self):
-        """Output results in JSON format."""
-        output = {
-            "summary": {
-                "total_rules": len(self.results),
-                "matched_rules": sum(1 for r in self.results if r["matched"]),
-                "total_errors": sum(len(r["errors"]) for r in self.results),
-            },
-            "rules": self.results,
-            "inventory": self.inventory,
-            "plugin_data": self.plugin_data,
-            "node": self.node_data,
-        }
-        print(json.dumps(output, indent=2, default=str))
+    def output_json(self, result_dict):
+        """Output the full evaluation result in JSON format."""
+        print(json.dumps(result_dict, indent=2, default=str))
 
     def run(self):
         """Run the complete evaluation process."""
@@ -251,18 +253,28 @@ class InspectionRulesEvaluator:
             return 1
         self.evaluate_rules()
         errors = sum(len(r["errors"]) for r in self.results)
+        exit_code = 1 if errors else 0
         if self.json_output:
-            self.output_json()
+            self.output_json(self._build_result_dict())
         else:
             self.print_results()
-            if errors:
-                return 1
-        return 0
+        return exit_code
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="Inspection Rules Tester",
+def _run_rules(args):
+    evaluator = InspectionRulesEvaluator(
+        args.node_file,
+        args.inventory_file,
+        args.rules_file,
+        json_output=args.json,
+    )
+    return evaluator.run()
+
+
+def _add_rules_subparser(subparsers):
+    parser = subparsers.add_parser(
+        "rules",
+        help="test inspection rules against hardware inventory",
         description=(
             "Test inspection rules against hardware inventory data "
             "to see which rules match and what actions would be "
@@ -276,38 +288,43 @@ Examples:
   openstack baremetal node inventory save --file inventory.json <node-id>
   %(prog)s node.yaml inventory.json rules.yaml
 
-  # JSON output for automation
+  # JSON output for scripting
   %(prog)s --json node.yaml inventory.json rules.yaml > results.json
         """,
     )
-
     parser.add_argument(
         "node_file",
         help="JSON or YAML file containing node data "
-             "(e.g. from 'openstack baremetal node show <id> -f json')"
+             "(e.g. from 'openstack baremetal node show <id> -f json')",
     )
     parser.add_argument(
         "inventory_file",
         help="JSON or YAML file containing hardware inventory and plugin data "
-             "(e.g. from 'openstack baremetal node inventory save')"
+             "(e.g. from 'openstack baremetal node inventory save')",
     )
     parser.add_argument(
-        "rules_file", help="YAML file containing inspection rules"
+        "rules_file",
+        help="YAML file containing inspection rules",
     )
     parser.add_argument(
-        "--json", action="store_true", help="Output results in JSON format"
+        "--json", action="store_true",
+        help="output the full evaluation result in JSON format",
     )
+    parser.set_defaults(func=_run_rules)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="ironic-sim",
+        description="Ironic simulator and testing tools.",
+    )
+    subparsers = parser.add_subparsers(dest="command", metavar="<command>")
+    subparsers.required = True
+
+    _add_rules_subparser(subparsers)
 
     args = parser.parse_args()
-
-    evaluator = InspectionRulesEvaluator(
-        args.node_file,
-        args.inventory_file,
-        args.rules_file,
-        json_output=args.json,
-    )
-
-    return evaluator.run()
+    return args.func(args)
 
 
 if __name__ == "__main__":

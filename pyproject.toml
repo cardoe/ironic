@@ -206,6 +206,7 @@ ironic-networking = "ironic.command.networking:main"
 ironic-novncproxy = "ironic.command.novncproxy:main"
 ironic-status = "ironic.command.status:main"
 ironic-pxe-filter = "ironic.command.pxe_filter:main"
+ironic-sim = "ironic.command.sim:main"
 
 [project.optional-dependencies]
 guru_meditation_reports = [
