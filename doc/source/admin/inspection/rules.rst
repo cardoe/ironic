@@ -174,3 +174,58 @@ level within the structure will be recursively formatted as well:
           path: "/properties/root_device"
           value: '{"serial": "{data[root_device][serial]}"}'
 
+Examples
+--------
+
+Full Example
+~~~~~~~~~~~~
+
+A complete rule showing all available top-level fields:
+
+.. code-block:: yaml
+
+    - uuid: "rule-dell-bmc-setup"
+      description: "Configure iDRAC driver for auto-discovered Dell servers"
+      priority: 100
+      sensitive: true
+      phase: main
+      conditions:
+        - op: contains
+          args:
+            value: "{inventory[system_vendor][manufacturer]}"
+            regex: "(?i)dell"
+        - op: is-true
+          args:
+            value: "{node.auto_discovered}"
+      actions:
+        - op: set-attribute
+          args:
+            path: "/driver"
+            value: "idrac"
+        - op: set-attribute
+          args:
+            path: "/driver_info/redfish_address"
+            value: "https://{inventory[bmc_address]}"
+        - op: log
+          args:
+            msg: "Configured iDRAC driver for Dell server {node.name}"
+            level: info
+
+Rule fields:
+
+* ``uuid`` - Optional unique identifier for the rule. If omitted, one is
+  generated automatically.
+* ``description`` - Human-readable description of the rule's purpose.
+* ``priority`` - Integer controlling the order in which rules are evaluated.
+  Higher values run first.
+* ``sensitive`` - When ``true``, the rule and its actions are masked in logs
+  to protect credentials or other sensitive data. Defaults to ``false``.
+* ``phase`` - The inspection phase in which the rule runs. Currently ``main``
+  is the only supported phase.
+* ``conditions`` - List of conditions that must all evaluate to ``true`` for
+  the actions to run. When omitted, the actions always run.
+* ``actions`` - List of actions to execute when all conditions are met.
+
+A more extensive set of example rules is available in the
+``tools/inspection_rules/rules.yaml.sample`` file in the Ironic source tree.
+
