@@ -27,7 +27,7 @@ Scenarios at a Glance
    * - :ref:`deploy-scenarios-standalone`
      - 1 to ~100 nodes
      - No
-     - Ironic API directly
+     - Ironic API
    * - :ref:`deploy-scenarios-openstack-no-nova`
      - Small to large
      - Yes (owner/lessee)
@@ -50,11 +50,19 @@ directly.
 
 The hard constraint is that there is **no multi-tenancy**. One set of
 credentials controls everything. Authentication is handled either by disabling
-it entirely (``noauth``) or using HTTP Basic auth — see
-:doc:`/install/standalone/configure` for both. For networking, a flat network
-is sufficient to get started. If you want switch-level automation without
-Neutron, the :doc:`ironic-networking service </install/standalone/networking>`
-handles that without pulling in the rest of OpenStack.
+it entirely (``noauth``) or using HTTP Basic auth. Standalone can also skip
+the full message queue and use JSON-RPC instead, which removes a significant
+operational dependency. See :doc:`/install/standalone/configure` for both.
+For networking, a flat network is sufficient to get started. If you want
+switch-level automation without Neutron, the
+:doc:`ironic-networking service </install/standalone/networking>` handles
+that without pulling in the rest of OpenStack.
+
+The :ref:`recommended target <refarch-conductor-scaling>` is up to 100 bare
+metal nodes per conductor for reliability and performance, which makes
+standalone a comfortable fit for smaller deployments. Beyond that scale, or
+when multi-tenancy becomes a requirement, the OpenStack scenarios below are
+the right path.
 
 Two projects build on top of Ironic in this mode and are worth knowing about:
 
@@ -93,8 +101,10 @@ the owner field; the owner operates from there. See
 Glance stores the images you deploy onto nodes. Neutron handles IPAM and,
 with the right ML2 plugin — `networking-generic-switch`_ is a common choice
 — can automate switch port configuration as part of the provisioning
-lifecycle. See :doc:`/admin/networking` for the full picture on which network
-interface options are available and what each one requires.
+lifecycle. If your environment uses OVN, see :doc:`/admin/ovn-networking`
+for what is supported and the current caveats. See :doc:`/admin/networking`
+for the full picture on which network interface options are available and
+what each one requires.
 
 This configuration scales from a handful of nodes up to a large deployment.
 It can be installed with any standard OpenStack deployment tool —
@@ -152,15 +162,16 @@ This person manages the physical hardware fleet: enrolling nodes, configuring
 out-of-band management (IPMI, Redfish), updating firmware, and setting
 maintenance state. In OpenStack deployments this maps to a system-scoped
 admin or member role. In standalone mode, this is whoever holds the API
-credentials.
+credentials. In smaller deployments this role and the Cloud Administrator
+role below are typically the same person.
 
 Cloud Administrator
 -------------------
 
 This person manages the Ironic service itself — policies, conductor groups,
-and service-level configuration. In smaller deployments this is often the
-same person as the hardware operator. In OpenStack deployments they hold a
-system-scoped admin role.
+and service-level configuration. In OpenStack deployments they hold a
+system-scoped admin role. In larger deployments the distinction from the
+hardware operator matters; in smaller ones it often does not.
 
 Project Administrator / Node Owner
 -----------------------------------
