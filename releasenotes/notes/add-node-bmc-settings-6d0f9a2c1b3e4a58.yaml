@@ -1,0 +1,29 @@
+---
+features:
+  - |
+    Adds support for managing BMC (management controller) settings separately
+    from BIOS settings, available at API microversion 1.116. BMC settings are
+    structurally identical to BIOS settings but describe the configuration of
+    the management controller itself. The following endpoints are added:
+
+    * ``GET /v1/nodes/{node_ident}/bmc`` lists a node's cached BMC settings.
+    * ``GET /v1/nodes/{node_ident}/bmc/{setting_name}`` returns a single
+      setting.
+
+    The ``redfish`` hardware type populates these settings from the Redfish
+    ``Manager`` attributes and can apply them through the
+    ``apply_bmc_settings`` clean/deploy step on the ``management`` interface.
+    The ``idrac`` hardware type reads the same settings from the Dell OEM
+    ``DellAttributes`` resource, where iDRAC keeps the BMC attributes.
+security:
+  - |
+    Access to BMC settings is more restricted than access to BIOS settings.
+    The new ``baremetal:node:bmc:get`` policy defaults to
+    ``SYSTEM_ADMIN_OR_OWNER_ADMIN``: only the system and the node's owner
+    administrator (or the service role) may read BMC settings. A lessee or a
+    plain project reader cannot access them. This keeps the operator's
+    out-of-band management configuration out of tenant reach.
+upgrade:
+  - |
+    A database migration adds the ``bmc_settings`` table. Run
+    ``ironic-dbsync upgrade`` as part of the upgrade.

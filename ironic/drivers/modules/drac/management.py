@@ -21,6 +21,7 @@ DRAC management interface
 """
 
 from oslo_log import log as logging
+import sushy
 
 from ironic.common import boot_devices
 from ironic.common import exception
@@ -172,3 +173,24 @@ class DracRedfishManagement(redfish_management.RedfishManagement):
         self.clear_job_queue(task)
         LOG.info('Reset iDRAC to known good state for node %(node)s',
                  {'node': task.node.uuid})
+
+    def _get_bmc(self, task):
+        """Return the iDRAC BMC settings resource.
+
+        Dell exposes the BMC (Manager) attributes through the Dell OEM
+        ``DellAttributes`` resource rather than on the Manager itself, so read
+        them from the Dell OEM extension.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :returns: a sushy resource exposing ``attributes``,
+            ``get_attribute_registry`` and ``set_attributes``.
+        :raises: sushy.exceptions.MissingAttributeError if the iDRAC does not
+            expose BMC attributes.
+        """
+        system = redfish_utils.get_system(task.node)
+        manager = redfish_utils.get_manager(task.node, system)
+        bmc = manager.get_oem_extension('Dell').bmc
+        if bmc is None:
+            raise sushy.exceptions.MissingAttributeError(
+                attribute='Attributes', resource=manager.path)
+        return bmc

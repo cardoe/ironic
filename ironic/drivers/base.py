@@ -1538,6 +1538,58 @@ class ManagementInterface(BaseInterface):
         raise exception.UnsupportedDriverExtension(
             driver=task.node.driver, extension='detach_virtual_media')
 
+    def cache_bmc_settings(self, task: TaskManager):
+        """Store or update BMC settings on the given node.
+
+        This method stores the BMC (management controller) settings to the
+        ``bmc_settings`` table. BMC settings are structurally identical to
+        BIOS settings but describe the configuration of the management
+        controller itself, and are managed separately with a stricter access
+        policy.
+
+        :param task: a TaskManager instance.
+        :raises: UnsupportedDriverExtension, if the node's driver doesn't
+            support getting BMC settings from bare metal.
+        :returns: None.
+        """
+        raise exception.UnsupportedDriverExtension(
+            driver=task.node.driver, extension='cache_bmc_settings')
+
+    def apply_bmc_settings(self, task: TaskManager, settings):
+        """Validate & apply BMC settings on the given node.
+
+        This method applies the given BMC settings on the node. After the
+        BMC configuration is done, ``cache_bmc_settings`` will be called to
+        update the node's BMC settings table with the configuration applied
+        on the node.
+
+        :param task: a TaskManager instance.
+        :param settings: a list of BMC settings to be updated.
+        :raises: UnsupportedDriverExtension, if the node's driver doesn't
+            support BMC configuration.
+        :raises: InvalidParameterValue, if validation of settings fails.
+        :returns: states.CLEANWAIT if BMC configuration is in progress
+            asynchronously or None if it is complete.
+        """
+        raise exception.UnsupportedDriverExtension(
+            driver=task.node.driver, extension='apply_bmc_settings')
+
+    def factory_reset_bmc(self, task: TaskManager):
+        """Reset BMC configuration to factory default on the given node.
+
+        After the BMC reset action is done, ``cache_bmc_settings`` will be
+        called to update the node's BMC settings table with the default BMC
+        settings.
+
+        :param task: a TaskManager instance.
+        :raises: UnsupportedDriverExtension, if the node's driver doesn't
+            support BMC reset.
+        :returns: states.CLEANWAIT if BMC configuration is in progress
+            asynchronously or None if it is complete.
+        """
+        raise exception.UnsupportedDriverExtension(
+            driver=task.node.driver, extension='factory_reset_bmc')
+
 
 class InspectInterface(BaseInterface):
     """Interface for inspection-related actions."""
@@ -1602,6 +1654,19 @@ def cache_bios_settings(func):
     def wrapped(self, task, *args, **kwargs):
         result = func(self, task, *args, **kwargs)
         self.cache_bios_settings(task)
+        return result
+    return wrapped
+
+
+def cache_bmc_settings(func):
+    """A decorator to cache bmc settings after running the function.
+
+    :param func: Function or method to wrap.
+    """
+    @functools.wraps(func)
+    def wrapped(self, task, *args, **kwargs):
+        result = func(self, task, *args, **kwargs)
+        self.cache_bmc_settings(task)
         return result
     return wrapped
 

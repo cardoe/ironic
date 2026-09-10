@@ -44,6 +44,7 @@ from ironic.drivers.modules import deploy_utils
 from ironic.drivers.modules.redfish import boot as redfish_boot
 from ironic.drivers.modules.redfish import firmware_utils
 from ironic.drivers.modules.redfish import utils as redfish_utils
+from ironic import objects
 
 LOG = log.getLogger(__name__)
 METRICS = metrics_utils.get_metrics_logger(__name__)
@@ -1843,3 +1844,140 @@ class RedfishManagement(base.ManagementInterface):
             for device_type in device_types:
                 redfish_boot.eject_vmedia(task,
                                           VMEDIA_DEVICES_MAP_REV[device_type])
+
+    def _get_bmc(self, task):
+        """Return the sushy resource exposing this node's BMC settings.
+
+        The generic Redfish implementation uses the attributes carried on the
+        Manager resource itself. Vendor drivers (e.g. iDRAC) override this to
+        read the attributes from the appropriate OEM resource.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :returns: a sushy resource exposing ``attributes``,
+            ``get_attribute_registry`` and ``set_attributes``.
+        :raises: sushy.exceptions.MissingAttributeError if the manager does
+            not expose BMC attributes.
+        """
+        system = redfish_utils.get_system(task.node)
+        manager = redfish_utils.get_manager(task.node, system)
+        return manager.bmc
+
+    def cache_bmc_settings(self, task):
+        """Store or update the current BMC settings for the node.
+
+        Get the current BMC (Manager) settings and store them in the
+        ``bmc_settings`` database table.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :raises: RedfishConnectionError when it fails to connect to Redfish
+        :raises: RedfishError on an error from the Sushy library
+        :raises: UnsupportedDriverExtension if the manager does not support
+            BMC settings
+        """
+        node_id = task.node.id
+        try:
+            bmc = self._get_bmc(task)
+            attributes = bmc.attributes
+        except sushy.exceptions.MissingAttributeError:
+            error_msg = _('Cannot fetch BMC attributes for node %s, BMC '
+                          'settings are not supported.') % task.node.uuid
+            LOG.error(error_msg)
+            raise exception.UnsupportedDriverExtension(error_msg)
+
+        settings = []
+        # Convert Redfish Manager attributes to Ironic BMC settings
+        if attributes:
+            settings = [{'name': k, 'value': v}
+                        for k, v in attributes.items()]
+
+        registry_fields = objects.BMCSetting.registry_fields
+
+        # Get the BMC attribute registry (optional, best effort)
+        registry_attributes = []
+        try:
+            bmc_registry = bmc.get_attribute_registry()
+            if bmc_registry:
+                registry_attributes = bmc_registry.registry_entries.attributes
+        except Exception as e:
+            LOG.info('Cannot get BMC Registry attributes for node %(node)s, '
+                     'Error %(exc)s.', {'node': task.node.uuid, 'exc': e})
+
+        # The registry may contain more entries than the settings; match each
+        # setting to its registry entry and copy the descriptive fields.
+        if registry_attributes:
+            for setting in settings:
+                reg = next((r for r in registry_attributes
+                            if r.name == setting['name']), None)
+                if reg is None:
+                    continue
+                fields = [attr for attr in dir(reg)
+                          if not attr.startswith("_")]
+                settable_keys = [f for f in fields if f in registry_fields]
+                for k in settable_keys:
+                    value = getattr(reg, k, None)
+                    if k == "allowable_values" and isinstance(value, list):
+                        value = [str(v) for v in value]
+                    setting[k] = value
+
+        LOG.debug('Cache BMC settings for node %(node_uuid)s',
+                  {'node_uuid': task.node.uuid})
+
+        create_list, update_list, delete_list, nochange_list = (
+            objects.BMCSettingList.sync_node_setting(
+                task.context, node_id, settings))
+
+        if create_list:
+            objects.BMCSettingList.create(
+                task.context, node_id, create_list)
+        if update_list:
+            objects.BMCSettingList.save(
+                task.context, node_id, update_list)
+        if delete_list:
+            delete_names = [d['name'] for d in delete_list]
+            objects.BMCSettingList.delete(
+                task.context, node_id, delete_names)
+
+    @base.clean_step(priority=0, argsinfo={
+        'settings': {
+            'description': 'A list of BMC settings to be applied',
+            'required': True
+        }
+    })
+    @base.deploy_step(priority=0, argsinfo={
+        'settings': {
+            'description': 'A list of BMC settings to be applied',
+            'required': True
+        }
+    })
+    @base.cache_bmc_settings
+    def apply_bmc_settings(self, task, settings):
+        """Apply the BMC settings to the node.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :param settings: a list of BMC settings to be updated.
+        :raises: RedfishConnectionError when it fails to connect to Redfish
+        :raises: RedfishError on an error from the Sushy library
+        """
+        try:
+            bmc = self._get_bmc(task)
+        except sushy.exceptions.MissingAttributeError:
+            error_msg = (_('Redfish BMC apply settings failed for node %s, '
+                           'because BMC settings are not supported.') %
+                         task.node.uuid)
+            LOG.error(error_msg)
+            raise exception.RedfishError(error=error_msg)
+
+        # Convert Ironic BMC settings to Redfish Manager attributes
+        attributes = {s['name']: s['value'] for s in settings}
+
+        LOG.debug('Applying BMC settings for node %(node_uuid)s: '
+                  '%(settings)r', {'node_uuid': task.node.uuid,
+                                   'settings': settings})
+        try:
+            bmc.set_attributes(attributes)
+        except sushy.exceptions.SushyError as e:
+            error_msg = (_('Redfish BMC apply settings failed for node '
+                           '%(node)s. Error: %(error)s') %
+                         {'node': task.node.uuid, 'error': e})
+            LOG.error(error_msg)
+            raise exception.RedfishError(error=error_msg)

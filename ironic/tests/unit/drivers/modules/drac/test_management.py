@@ -22,6 +22,8 @@ Test class for DRAC management interface
 
 from unittest import mock
 
+import sushy
+
 import ironic.common.boot_devices
 from ironic.common import exception
 from ironic.common import states
@@ -175,3 +177,25 @@ class DracRedfishManagementTestCase(test_utils.BaseDracTest):
             mock_manager_oem.job_service.delete_jobs.assert_called_once_with(
                 job_ids=['JID_CLEARALL'])
             mock_manager_oem.reset_idrac.assert_called_once_with()
+
+    @mock.patch.object(drac_mgmt, 'redfish_utils', autospec=True)
+    def test__get_bmc(self, mock_redfish_utils):
+        mock_manager = mock_redfish_utils.get_manager.return_value
+        mock_bmc = mock_manager.get_oem_extension.return_value.bmc
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            result = task.driver.management._get_bmc(task)
+
+        self.assertIs(mock_bmc, result)
+        mock_manager.get_oem_extension.assert_called_once_with('Dell')
+
+    @mock.patch.object(drac_mgmt, 'redfish_utils', autospec=True)
+    def test__get_bmc_missing(self, mock_redfish_utils):
+        mock_manager = mock_redfish_utils.get_manager.return_value
+        mock_manager.get_oem_extension.return_value.bmc = None
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            self.assertRaises(sushy.exceptions.MissingAttributeError,
+                              task.driver.management._get_bmc, task)

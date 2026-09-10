@@ -2933,3 +2933,93 @@ class SensorDataTestCase(db_base.DbTestCase):
 
         expected = {'Drive': {}}
         self.assertEqual(result, expected)
+
+
+class RedfishManagementBMCTestCase(db_base.DbTestCase):
+
+    def setUp(self):
+        super(RedfishManagementBMCTestCase, self).setUp()
+        self.config(enabled_hardware_types=['redfish'],
+                    enabled_power_interfaces=['redfish'],
+                    enabled_boot_interfaces=['redfish-virtual-media'],
+                    enabled_management_interfaces=['redfish'],
+                    enabled_inspect_interfaces=['redfish'],
+                    enabled_bios_interfaces=['redfish'])
+        self.node = obj_utils.create_test_node(
+            self.context, driver='redfish', driver_info=INFO_DICT)
+
+    @mock.patch.object(redfish_mgmt.objects, 'BMCSettingList', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_manager', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_cache_bmc_settings(self, mock_get_system, mock_get_manager,
+                                mock_setting_list):
+        manager = mock.Mock()
+        manager.bmc.attributes = {'IPMI1_Enable': 'Disabled',
+                                  'SSH_Enable': 'Enabled'}
+        manager.bmc.get_attribute_registry.return_value = None
+        mock_get_manager.return_value = manager
+        create_list = [{'name': 'IPMI1_Enable', 'value': 'Disabled'},
+                       {'name': 'SSH_Enable', 'value': 'Enabled'}]
+        mock_setting_list.sync_node_setting.return_value = (
+            create_list, [], [], [])
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.cache_bmc_settings(task)
+
+            mock_get_manager.assert_called_once_with(task.node,
+                                                     mock_get_system.return_value)
+            mock_setting_list.sync_node_setting.assert_called_once_with(
+                task.context, task.node.id, mock.ANY)
+            mock_setting_list.create.assert_called_once_with(
+                task.context, task.node.id, create_list)
+
+    @mock.patch.object(redfish_utils, 'get_manager', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_cache_bmc_settings_not_supported(self, mock_get_system,
+                                              mock_get_manager):
+        manager = mock.Mock()
+        type(manager).bmc = mock.PropertyMock(
+            side_effect=sushy.exceptions.MissingAttributeError(
+                attribute='Attributes', resource='Manager'))
+        mock_get_manager.return_value = manager
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            self.assertRaises(exception.UnsupportedDriverExtension,
+                              task.driver.management.cache_bmc_settings,
+                              task)
+
+    @mock.patch.object(redfish_utils, 'get_manager', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_apply_bmc_settings(self, mock_get_system, mock_get_manager):
+        manager = mock.Mock()
+        mock_get_manager.return_value = manager
+        settings = [{'name': 'IPMI1_Enable', 'value': 'Enabled'},
+                    {'name': 'SSH_Enable', 'value': 'Disabled'}]
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            with mock.patch.object(task.driver.management,
+                                   'cache_bmc_settings', autospec=True):
+                task.driver.management.apply_bmc_settings(task, settings)
+
+            manager.bmc.set_attributes.assert_called_once_with(
+                {'IPMI1_Enable': 'Enabled', 'SSH_Enable': 'Disabled'})
+
+    @mock.patch.object(redfish_utils, 'get_manager', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_apply_bmc_settings_error(self, mock_get_system,
+                                      mock_get_manager):
+        manager = mock.Mock()
+        manager.bmc.set_attributes.side_effect = sushy.exceptions.SushyError()
+        mock_get_manager.return_value = manager
+        settings = [{'name': 'IPMI1_Enable', 'value': 'Enabled'}]
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            with mock.patch.object(task.driver.management,
+                                   'cache_bmc_settings', autospec=True):
+                self.assertRaises(exception.RedfishError,
+                                  task.driver.management.apply_bmc_settings,
+                                  task, settings)
