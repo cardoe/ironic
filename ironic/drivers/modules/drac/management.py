@@ -24,6 +24,7 @@ from oslo_log import log as logging
 
 from ironic.common import boot_devices
 from ironic.common import exception
+from ironic.common.i18n import _
 from ironic.common import metrics_utils
 from ironic.common import states
 from ironic.drivers import base
@@ -76,6 +77,104 @@ _CLEAR_JOB_IDS = 'JID_CLEARALL'
 
 # Clean steps constant
 _CLEAR_JOBS_CLEAN_STEPS = ['clear_job_queue', 'known_good_state']
+
+# iDRAC supports up to three NTP servers and two static IPv4 DNS servers.
+_MAX_NTP_SERVERS = 3
+_MAX_DNS_SERVERS = 2
+
+_SET_NTP_ARGSINFO = {
+    'ntp_servers': {
+        'description': (
+            'A list of up to three NTP server addresses to configure on the '
+            'iDRAC. The first three entries are used, extras are ignored.'),
+        'required': True,
+    },
+    'enable_ntp': {
+        'description': (
+            'Whether to enable NTP time synchronisation. Defaults to True.'),
+        'required': False,
+    },
+    'timezone': {
+        'description': (
+            'Optional iDRAC timezone string, e.g. "US/Central".'),
+        'required': False,
+    },
+    'extra_attributes': {
+        'description': (
+            'Optional dict of raw Dell OEM attribute name/value pairs '
+            'merged into the PATCH, for iDRAC firmware whose attribute '
+            'names differ.'),
+        'required': False,
+    },
+}
+
+_SET_DNS_ARGSINFO = {
+    'dns_servers': {
+        'description': (
+            'A list of up to two static IPv4 DNS server addresses to '
+            'configure on the iDRAC. The first two entries are used.'),
+        'required': True,
+    },
+    'dns_domain_name': {
+        'description': (
+            'Optional DNS domain name to set on the iDRAC.'),
+        'required': False,
+    },
+    'extra_attributes': {
+        'description': (
+            'Optional dict of raw Dell OEM attribute name/value pairs '
+            'merged into the PATCH, for iDRAC firmware whose attribute '
+            'names differ.'),
+        'required': False,
+    },
+}
+
+_SET_OIDC_ARGSINFO = {
+    'discovery_url': {
+        'description': (
+            'The OpenID Connect provider discovery URL '
+            '(.well-known/openid-configuration).'),
+        'required': False,
+    },
+    'client_id': {
+        'description': 'The OpenID Connect client (application) ID.',
+        'required': False,
+    },
+    'client_secret': {
+        'description': (
+            'The OpenID Connect client secret. Not logged.'),
+        'required': False,
+    },
+    'name': {
+        'description': (
+            'A display name for the OpenID Connect provider entry.'),
+        'required': False,
+    },
+    'enable_oidc': {
+        'description': (
+            'Whether to enable this OpenID Connect provider. Defaults to '
+            'True.'),
+        'required': False,
+    },
+    'provider_index': {
+        'description': (
+            'Which iDRAC OpenIDConnectServer slot to program (1-based). '
+            'Defaults to 1.'),
+        'required': False,
+    },
+    'extra_attributes': {
+        'description': (
+            'Optional dict of raw Dell OEM attribute name/value pairs '
+            'merged into the PATCH, for iDRAC firmware whose attribute '
+            'names differ.'),
+        'required': False,
+    },
+}
+
+
+def _bool_to_idrac(value):
+    """Map a Python boolean to the iDRAC 'Enabled'/'Disabled' string."""
+    return 'Enabled' if value else 'Disabled'
 
 
 def _is_boot_order_flexibly_programmable(persistent, bios_settings):
@@ -171,4 +270,129 @@ class DracRedfishManagement(redfish_management.RedfishManagement):
         self.reset_idrac(task)
         self.clear_job_queue(task)
         LOG.info('Reset iDRAC to known good state for node %(node)s',
+                 {'node': task.node.uuid})
+
+    @METRICS.timer('DracRedfishManagement.set_ntp_servers')
+    @base.service_step(priority=0, abortable=False,
+                       argsinfo=_SET_NTP_ARGSINFO, requires_ramdisk=False)
+    def set_ntp_servers(self, task, ntp_servers, enable_ntp=True,
+                        timezone=None, extra_attributes=None):
+        """Program the iDRAC NTP server settings.
+
+        This is an out-of-band service step, invokable from a runbook, that
+        PATCHes the Dell OEM iDRAC attributes directly. No database changes
+        are made and the settings apply immediately on the iDRAC.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :param ntp_servers: a list of NTP server addresses (up to three are
+            used by the iDRAC).
+        :param enable_ntp: whether to enable NTP synchronisation. Default
+            True.
+        :param timezone: optional iDRAC timezone string.
+        :param extra_attributes: optional dict of raw Dell OEM attributes
+            merged into the PATCH.
+        :raises: InvalidParameterValue if ntp_servers is not a list.
+        :raises: RedfishError on an error talking to the BMC.
+        """
+        if not isinstance(ntp_servers, list):
+            raise exception.InvalidParameterValue(
+                _('ntp_servers must be a list of server addresses'))
+
+        attributes = {'NTPConfigGroup.1.NTPEnable': _bool_to_idrac(enable_ntp)}
+        for index in range(_MAX_NTP_SERVERS):
+            value = ntp_servers[index] if index < len(ntp_servers) else ''
+            attributes['NTPConfigGroup.1.NTP%d' % (index + 1)] = value
+
+        if timezone:
+            attributes['Time.1.Timezone'] = timezone
+
+        if extra_attributes:
+            attributes.update(extra_attributes)
+
+        drac_utils.set_dell_attributes(task, attributes)
+        LOG.info('Set NTP servers for node %(node)s', {'node': task.node.uuid})
+
+    @METRICS.timer('DracRedfishManagement.set_dns_servers')
+    @base.service_step(priority=0, abortable=False,
+                       argsinfo=_SET_DNS_ARGSINFO, requires_ramdisk=False)
+    def set_dns_servers(self, task, dns_servers, dns_domain_name=None,
+                        extra_attributes=None):
+        """Program the iDRAC DNS server settings.
+
+        This is an out-of-band service step, invokable from a runbook, that
+        PATCHes the Dell OEM iDRAC attributes directly. It configures the
+        static IPv4 DNS servers and disables learning them from DHCP so the
+        static values take effect.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :param dns_servers: a list of DNS server addresses (up to two static
+            IPv4 servers are used by the iDRAC).
+        :param dns_domain_name: optional DNS domain name to set.
+        :param extra_attributes: optional dict of raw Dell OEM attributes
+            merged into the PATCH.
+        :raises: InvalidParameterValue if dns_servers is not a list.
+        :raises: RedfishError on an error talking to the BMC.
+        """
+        if not isinstance(dns_servers, list):
+            raise exception.InvalidParameterValue(
+                _('dns_servers must be a list of server addresses'))
+
+        # Static DNS servers only take effect when the iDRAC is not told to
+        # learn them from DHCP.
+        attributes = {'IPv4.1.DNSFromDHCP': 'Disabled'}
+        for index in range(_MAX_DNS_SERVERS):
+            value = dns_servers[index] if index < len(dns_servers) else ''
+            attributes['IPv4Static.1.DNS%d' % (index + 1)] = value
+
+        if dns_domain_name is not None:
+            attributes['NIC.1.DNSDomainName'] = dns_domain_name
+            attributes['NIC.1.DNSDomainFromDHCP'] = 'Disabled'
+
+        if extra_attributes:
+            attributes.update(extra_attributes)
+
+        drac_utils.set_dell_attributes(task, attributes)
+        LOG.info('Set DNS servers for node %(node)s', {'node': task.node.uuid})
+
+    @METRICS.timer('DracRedfishManagement.set_oidc_config')
+    @base.service_step(priority=0, abortable=False,
+                       argsinfo=_SET_OIDC_ARGSINFO, requires_ramdisk=False)
+    def set_oidc_config(self, task, discovery_url=None, client_id=None,
+                        client_secret=None, name=None, enable_oidc=True,
+                        provider_index=1, extra_attributes=None):
+        """Program the iDRAC OpenID Connect (SSO) settings.
+
+        This is an out-of-band service step, invokable from a runbook, that
+        PATCHes the Dell OEM iDRAC attributes directly to configure an
+        OpenID Connect provider for single sign-on. The client secret is
+        never logged.
+
+        :param task: a TaskManager instance containing the node to act on.
+        :param discovery_url: the provider discovery URL.
+        :param client_id: the OpenID Connect client ID.
+        :param client_secret: the OpenID Connect client secret.
+        :param name: a display name for the provider entry.
+        :param enable_oidc: whether to enable the provider. Default True.
+        :param provider_index: which OpenIDConnectServer slot to program
+            (1-based). Default 1.
+        :param extra_attributes: optional dict of raw Dell OEM attributes
+            merged into the PATCH.
+        :raises: RedfishError on an error talking to the BMC.
+        """
+        prefix = 'OpenIDConnectServer.%d.' % provider_index
+        attributes = {prefix + 'Enabled': _bool_to_idrac(enable_oidc)}
+        if name is not None:
+            attributes[prefix + 'Name'] = name
+        if discovery_url is not None:
+            attributes[prefix + 'DiscoveryURL'] = discovery_url
+        if client_id is not None:
+            attributes[prefix + 'ClientID'] = client_id
+        if client_secret is not None:
+            attributes[prefix + 'ClientSecret'] = client_secret
+
+        if extra_attributes:
+            attributes.update(extra_attributes)
+
+        drac_utils.set_dell_attributes(task, attributes)
+        LOG.info('Set OIDC configuration for node %(node)s',
                  {'node': task.node.uuid})

@@ -175,3 +175,102 @@ class DracRedfishManagementTestCase(test_utils.BaseDracTest):
             mock_manager_oem.job_service.delete_jobs.assert_called_once_with(
                 job_ids=['JID_CLEARALL'])
             mock_manager_oem.reset_idrac.assert_called_once_with()
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_ntp_servers(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.set_ntp_servers(
+                task, ntp_servers=['10.0.0.1', '10.0.0.2'],
+                timezone='US/Central')
+        mock_set_attrs.assert_called_once_with(mock.ANY, {
+            'NTPConfigGroup.1.NTPEnable': 'Enabled',
+            'NTPConfigGroup.1.NTP1': '10.0.0.1',
+            'NTPConfigGroup.1.NTP2': '10.0.0.2',
+            'NTPConfigGroup.1.NTP3': '',
+            'Time.1.Timezone': 'US/Central',
+        })
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_ntp_servers_disable_and_extra(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.set_ntp_servers(
+                task, ntp_servers=[], enable_ntp=False,
+                extra_attributes={'NTPConfigGroup.1.NTPMaxDist': '16'})
+        mock_set_attrs.assert_called_once_with(mock.ANY, {
+            'NTPConfigGroup.1.NTPEnable': 'Disabled',
+            'NTPConfigGroup.1.NTP1': '',
+            'NTPConfigGroup.1.NTP2': '',
+            'NTPConfigGroup.1.NTP3': '',
+            'NTPConfigGroup.1.NTPMaxDist': '16',
+        })
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_ntp_servers_invalid(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            self.assertRaises(
+                exception.InvalidParameterValue,
+                task.driver.management.set_ntp_servers,
+                task, ntp_servers='10.0.0.1')
+        self.assertFalse(mock_set_attrs.called)
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_dns_servers(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.set_dns_servers(
+                task, dns_servers=['10.0.0.53'],
+                dns_domain_name='example.com')
+        mock_set_attrs.assert_called_once_with(mock.ANY, {
+            'IPv4.1.DNSFromDHCP': 'Disabled',
+            'IPv4Static.1.DNS1': '10.0.0.53',
+            'IPv4Static.1.DNS2': '',
+            'NIC.1.DNSDomainName': 'example.com',
+            'NIC.1.DNSDomainFromDHCP': 'Disabled',
+        })
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_dns_servers_invalid(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            self.assertRaises(
+                exception.InvalidParameterValue,
+                task.driver.management.set_dns_servers,
+                task, dns_servers='10.0.0.53')
+        self.assertFalse(mock_set_attrs.called)
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_oidc_config(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.set_oidc_config(
+                task, discovery_url='https://idp/.well-known/'
+                                    'openid-configuration',
+                client_id='abc', client_secret='shhh', name='corp-sso')
+        mock_set_attrs.assert_called_once_with(mock.ANY, {
+            'OpenIDConnectServer.1.Enabled': 'Enabled',
+            'OpenIDConnectServer.1.Name': 'corp-sso',
+            'OpenIDConnectServer.1.DiscoveryURL':
+                'https://idp/.well-known/openid-configuration',
+            'OpenIDConnectServer.1.ClientID': 'abc',
+            'OpenIDConnectServer.1.ClientSecret': 'shhh',
+        })
+
+    @mock.patch.object(drac_mgmt.drac_utils, 'set_dell_attributes',
+                       autospec=True)
+    def test_set_oidc_config_index_and_disable(self, mock_set_attrs):
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.management.set_oidc_config(
+                task, enable_oidc=False, provider_index=2)
+        mock_set_attrs.assert_called_once_with(mock.ANY, {
+            'OpenIDConnectServer.2.Enabled': 'Disabled',
+        })

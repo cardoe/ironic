@@ -109,3 +109,78 @@ def execute_oem_manager_method(
                       'unknown'}))
         LOG.error(error_msg)
         raise exception.RedfishError(error=error_msg)
+
+
+def _get_dell_attributes_uri(manager, target='iDRAC'):
+    """Resolve the URI of a Dell OEM ``DellAttributes`` resource.
+
+    iDRAC exposes its configuration through Dell OEM ``DellAttributes``
+    resources (one each for the iDRAC, the System and the Lifecycle
+    Controller). These are advertised from the Manager under
+    ``Links/Oem/Dell/DellAttributes``.
+
+    :param manager: a sushy Manager object.
+    :param target: substring used to pick the desired attribute resource,
+        matched against the advertised ``@odata.id`` values. Defaults to
+        ``iDRAC`` which is where NTP, DNS and OIDC settings live.
+    :returns: the URI of the matching ``DellAttributes`` resource.
+    """
+    links = (((manager.json or {}).get('Links') or {}).get('Oem') or {}) \
+        .get('Dell', {}).get('DellAttributes') or []
+
+    for member in links:
+        uri = member.get('@odata.id')
+        if not uri:
+            continue
+        # Match against the trailing resource id (e.g. ``iDRAC.Embedded.1``)
+        # rather than the whole URI: the manager id also appears earlier in
+        # the path, so a substring match on the URI is ambiguous.
+        member_id = uri.rstrip('/').rsplit('/', 1)[-1]
+        if target.lower() in member_id.lower():
+            return uri
+
+    if links and links[0].get('@odata.id'):
+        # Fall back to the first advertised DellAttributes resource.
+        return links[0]['@odata.id']
+
+    # Last resort: construct the conventional iDRAC URI. iDRAC names the
+    # attribute resource after the manager (e.g. ``iDRAC.Embedded.1``).
+    return '%(path)s/Oem/Dell/DellAttributes/%(identity)s' % {
+        'path': manager.path.rstrip('/'), 'identity': manager.identity}
+
+
+def set_dell_attributes(task, attributes, target='iDRAC'):
+    """Apply a set of Dell OEM attributes to a node's iDRAC.
+
+    Performs a raw Redfish PATCH against the Dell OEM ``DellAttributes``
+    resource. Most iDRAC attributes (NTP, DNS, OIDC, ...) are applied
+    immediately, without requiring a configuration job or a reboot.
+
+    Only the attribute names are logged, never their values, so that
+    secrets (such as an OIDC client secret) are not written to the logs.
+
+    :param task: a TaskManager instance containing the node to act on.
+    :param attributes: a dict of ``{attribute_name: value}`` to apply.
+    :param target: which ``DellAttributes`` resource to target. Defaults
+        to the iDRAC attributes.
+    :raises: RedfishError on any error talking to the BMC.
+    """
+    system = redfish_utils.get_system(task.node)
+    manager = redfish_utils.get_manager(task.node, system)
+    uri = _get_dell_attributes_uri(manager, target=target)
+
+    LOG.debug('Applying Dell attributes %(attrs)s to node %(node)s at '
+              '%(uri)s', {'attrs': sorted(attributes),
+                          'node': task.node.uuid, 'uri': uri})
+    try:
+        manager._conn.patch(uri, data={'Attributes': attributes})
+    except sushy.exceptions.SushyError as e:
+        error_msg = (_('Failed to apply Dell attributes %(attrs)s to node '
+                       '%(node)s at %(uri)s. Error: %(error)s') %
+                     {'attrs': sorted(attributes), 'node': task.node.uuid,
+                      'uri': uri, 'error': e})
+        LOG.error(error_msg)
+        raise exception.RedfishError(error=error_msg)
+
+    LOG.info('Applied Dell attributes %(attrs)s to node %(node)s',
+             {'attrs': sorted(attributes), 'node': task.node.uuid})

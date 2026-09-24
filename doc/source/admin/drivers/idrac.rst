@@ -214,6 +214,48 @@ The management interface for ``idrac-redfish`` supports:
   :doc:`/admin/drivers/redfish` for more information on firmware update
   support.
 
+BMC configuration service steps
+-------------------------------
+
+The ``idrac-redfish`` management interface provides out-of-band service
+steps for programming common iDRAC settings. They PATCH the Dell OEM
+``DellAttributes`` resource directly over Redfish, apply immediately without
+a reboot, and store nothing in the Ironic database. Being service steps, they
+can be run individually or bundled into a runbook and applied to an
+``active`` node:
+
+* ``set_ntp_servers`` -- configure NTP servers (up to three) and,
+  optionally, the timezone. Arguments: ``ntp_servers`` (required list),
+  ``enable_ntp`` (default ``true``), ``timezone``.
+* ``set_dns_servers`` -- configure the static IPv4 DNS servers (up to two)
+  and, optionally, the DNS domain name. Arguments: ``dns_servers`` (required
+  list), ``dns_domain_name``.
+* ``set_oidc_config`` -- configure an OpenID Connect provider for single
+  sign-on. Arguments: ``discovery_url``, ``client_id``, ``client_secret``,
+  ``name``, ``enable_oidc`` (default ``true``), ``provider_index``
+  (default ``1``).
+
+Every step also accepts an ``extra_attributes`` argument -- a dictionary of
+raw Dell OEM attribute name/value pairs merged into the PATCH -- so that
+attribute names that differ between iDRAC firmware versions can be supplied
+directly.
+
+For example, to set the NTP servers on an active node with a service step
+(no ramdisk is required, as these steps run entirely out of band)::
+
+    baremetal node service $NODE --disable-ramdisk --service-steps \
+        '[{"interface": "management", "step": "set_ntp_servers",
+           "args": {"ntp_servers": ["10.0.0.1", "10.0.0.2"],
+                    "timezone": "US/Central"}}]'
+
+The same steps can be bundled into a :doc:`runbook </admin/runbooks>` and
+applied with ``baremetal node service --runbook <RUNBOOK> $NODE``.
+
+.. note::
+   The attribute names used by these steps target iDRAC9. If a step reports
+   that an attribute is unknown, supply the correct name for your firmware
+   through ``extra_attributes``.
+
 RAID Interface
 ==============
 
