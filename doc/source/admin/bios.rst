@@ -44,7 +44,7 @@ source code tree, for example:
 
     ironic.hardware.interfaces.bios =
         fake = ironic.drivers.modules.fake:FakeBIOS
-        no-bios = ironic.drivers.modules.noop:NoBIOS
+        no-bios = ironic.drivers.modules.legacy_noop:NoBIOS
 
 Retrieve BIOS settings
 ======================

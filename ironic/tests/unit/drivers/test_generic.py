@@ -21,7 +21,7 @@ from ironic.drivers import base as driver_base
 from ironic.drivers.modules import agent
 from ironic.drivers.modules import fake
 from ironic.drivers.modules import inspector
-from ironic.drivers.modules import noop
+from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import noop_mgmt
 from ironic.drivers.modules import pxe
 from ironic.tests.unit.db import base as db_base
@@ -45,8 +45,8 @@ class ManualManagementHardwareTestCase(db_base.DbTestCase):
             self.assertIsInstance(task.driver.power, fake.FakePower)
             self.assertIsInstance(task.driver.boot, pxe.PXEBoot)
             self.assertIsInstance(task.driver.deploy, agent.AgentDeploy)
-            self.assertIsInstance(task.driver.inspect, noop.NoInspect)
-            self.assertIsInstance(task.driver.raid, noop.NoRAID)
+            self.assertIsInstance(task.driver.inspect, legacy_noop.NoInspect)
+            self.assertIsInstance(task.driver.raid, legacy_noop.NoRAID)
 
     def test_supported_interfaces(self):
         self.config(enabled_inspect_interfaces=['agent', 'no-inspect'],

@@ -49,7 +49,7 @@ none = "ironic.dhcp.none:NoneDHCPApi"
 [project.entry-points."ironic.hardware.interfaces.bios"]
 fake = "ironic.drivers.modules.fake:FakeBIOS"
 idrac-redfish = "ironic.drivers.modules.drac.bios:DracRedfishBIOS"
-no-bios = "ironic.drivers.modules.noop:NoBIOS"
+no-bios = "ironic.drivers.modules.legacy_noop:NoBIOS"
 redfish = "ironic.drivers.modules.redfish.bios:RedfishBIOS"
 
 [project.entry-points."ironic.hardware.interfaces.boot"]
@@ -66,7 +66,7 @@ http-ipxe = "ironic.drivers.modules.ipxe:iPXEHttpBoot"
 fake = "ironic.drivers.modules.fake:FakeConsole"
 fake-graphical = "ironic.drivers.modules.fake:FakeGraphicalConsole"
 ipmitool-socat = "ironic.drivers.modules.ipmitool:IPMISocatConsole"
-no-console = "ironic.drivers.modules.noop:NoConsole"
+no-console = "ironic.drivers.modules.legacy_noop:NoConsole"
 redfish-graphical = "ironic.drivers.modules.redfish.graphical_console:RedfishGraphicalConsole"
 
 [project.entry-points."ironic.hardware.interfaces.deploy"]
@@ -77,19 +77,19 @@ bootc = "ironic.drivers.modules.agent:BootcAgentDeploy"
 custom-agent = "ironic.drivers.modules.agent:CustomAgentDeploy"
 direct = "ironic.drivers.modules.agent:AgentDeploy"
 fake = "ironic.drivers.modules.fake:FakeDeploy"
-noop = "ironic.drivers.modules.noop:NoDeploy"
+noop = "ironic.drivers.modules.legacy_noop:NoDeploy"
 ramdisk = "ironic.drivers.modules.ramdisk:RamdiskDeploy"
 
 [project.entry-points."ironic.hardware.interfaces.firmware"]
 fake = "ironic.drivers.modules.fake:FakeFirmware"
-no-firmware = "ironic.drivers.modules.noop:NoFirmware"
+no-firmware = "ironic.drivers.modules.legacy_noop:NoFirmware"
 redfish = "ironic.drivers.modules.redfish.firmware:RedfishFirmware"
 
 [project.entry-points."ironic.hardware.interfaces.inspect"]
 agent = "ironic.drivers.modules.inspector:AgentInspect"
 fake = "ironic.drivers.modules.fake:FakeInspect"
 idrac-redfish = "ironic.drivers.modules.drac.inspect:DracRedfishInspect"
-no-inspect = "ironic.drivers.modules.noop:NoInspect"
+no-inspect = "ironic.drivers.modules.legacy_noop:NoInspect"
 redfish = "ironic.drivers.modules.redfish.inspect:RedfishInspect"
 
 [project.entry-points."ironic.hardware.interfaces.management"]
@@ -117,13 +117,13 @@ redfish = "ironic.drivers.modules.redfish.power:RedfishPower"
 agent = "ironic.drivers.modules.agent:AgentRAID"
 fake = "ironic.drivers.modules.fake:FakeRAID"
 idrac-redfish = "ironic.drivers.modules.drac.raid:DracRedfishRAID"
-no-raid = "ironic.drivers.modules.noop:NoRAID"
+no-raid = "ironic.drivers.modules.legacy_noop:NoRAID"
 redfish = "ironic.drivers.modules.redfish.raid:RedfishRAID"
 
 [project.entry-points."ironic.hardware.interfaces.rescue"]
 agent = "ironic.drivers.modules.agent:AgentRescue"
 fake = "ironic.drivers.modules.fake:FakeRescue"
-no-rescue = "ironic.drivers.modules.noop:NoRescue"
+no-rescue = "ironic.drivers.modules.legacy_noop:NoRescue"
 
 [project.entry-points."ironic.hardware.interfaces.storage"]
 fake = "ironic.drivers.modules.fake:FakeStorage"
@@ -135,7 +135,7 @@ external = "ironic.drivers.modules.storage.external:ExternalStorage"
 fake = "ironic.drivers.modules.fake:FakeVendorB"
 idrac-redfish = "ironic.drivers.modules.drac.vendor_passthru:DracRedfishVendorPassthru"
 ipmitool = "ironic.drivers.modules.ipmitool:VendorPassthru"
-no-vendor = "ironic.drivers.modules.noop:NoVendor"
+no-vendor = "ironic.drivers.modules.legacy_noop:NoVendor"
 redfish = "ironic.drivers.modules.redfish.vendor:RedfishVendorPassthru"
 
 [project.entry-points."ironic.hardware.types"]

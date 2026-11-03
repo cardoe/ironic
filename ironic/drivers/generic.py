@@ -28,7 +28,7 @@ from ironic.drivers.modules.network import flat as flat_net
 from ironic.drivers.modules.network import ironic_networking
 from ironic.drivers.modules.network import neutron
 from ironic.drivers.modules.network import noop as noop_net
-from ironic.drivers.modules import noop
+from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import noop_mgmt
 from ironic.drivers.modules import pxe
 from ironic.drivers.modules import ramdisk
@@ -61,7 +61,7 @@ class GenericHardware(hardware_type.AbstractHardwareType):
         """List of supported inspect interfaces."""
         # Inspector support should be the default if it's enabled by an
         # operator (implying that the service is installed).
-        return [inspector.AgentInspect, noop.NoInspect]
+        return [inspector.AgentInspect, legacy_noop.NoInspect]
 
     @property
     def supported_network_interfaces(self):
@@ -74,14 +74,14 @@ class GenericHardware(hardware_type.AbstractHardwareType):
         """List of supported raid interfaces."""
         # AgentRAID requires RAID bits on the IPA image that are not shipped by
         # default. Hence, even if AgentRAID is enabled, NoRAID is the default.
-        return [noop.NoRAID, agent.AgentRAID]
+        return [legacy_noop.NoRAID, agent.AgentRAID]
 
     @property
     def supported_rescue_interfaces(self):
         """List of supported rescue interfaces."""
         # AgentRescue requires IPA with the rescue extension enabled, so
         # NoRescue is the default
-        return [noop.NoRescue, agent.AgentRescue]
+        return [legacy_noop.NoRescue, agent.AgentRescue]
 
     @property
     def supported_storage_interfaces(self):
@@ -92,12 +92,12 @@ class GenericHardware(hardware_type.AbstractHardwareType):
     @property
     def supported_firmware_interfaces(self):
         """List of supported firmware interfaces."""
-        return [noop.NoFirmware]
+        return [legacy_noop.NoFirmware]
 
     @property
     def supported_console_interfaces(self):
         """List of classes of supported console interfaces."""
-        return [noop.NoConsole, fake.FakeGraphicalConsole]
+        return [legacy_noop.NoConsole, fake.FakeGraphicalConsole]
 
 
 class ManualManagementHardware(GenericHardware):
@@ -113,7 +113,7 @@ class ManualManagementHardware(GenericHardware):
     def supported_deploy_interfaces(self):
         """List of supported deploy interfaces."""
         return (super().supported_deploy_interfaces
-                + [noop.NoDeploy])
+                + [legacy_noop.NoDeploy])
 
     @property
     def supported_management_interfaces(self):
@@ -128,4 +128,4 @@ class ManualManagementHardware(GenericHardware):
     @property
     def supported_vendor_interfaces(self):
         """List of supported vendor interfaces."""
-        return [noop.NoVendor]
+        return [legacy_noop.NoVendor]

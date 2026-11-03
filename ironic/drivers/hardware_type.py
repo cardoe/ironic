@@ -23,7 +23,7 @@ from typing import Sequence
 from ironic.common import exception
 from ironic.drivers import base
 from ironic.drivers.modules.network import noop as noop_net
-from ironic.drivers.modules import noop
+from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules.storage import noop as noop_storage
 
 
@@ -78,21 +78,21 @@ class AbstractHardwareType(abc.ABC):
     @property
     def supported_bios_interfaces(self) -> Sequence[type[base.BIOSInterface]]:
         """List of supported bios interfaces."""
-        return [noop.NoBIOS]
+        return [legacy_noop.NoBIOS]
 
     @property
     def supported_console_interfaces(
         self,
     ) -> Sequence[type[base.ConsoleInterface]]:
         """List of supported console interfaces."""
-        return [noop.NoConsole]
+        return [legacy_noop.NoConsole]
 
     @property
     def supported_inspect_interfaces(
         self,
     ) -> Sequence[type[base.InspectInterface]]:
         """List of supported inspect interfaces."""
-        return [noop.NoInspect]
+        return [legacy_noop.NoInspect]
 
     @property
     def supported_network_interfaces(
@@ -104,14 +104,14 @@ class AbstractHardwareType(abc.ABC):
     @property
     def supported_raid_interfaces(self) -> Sequence[type[base.RAIDInterface]]:
         """List of supported raid interfaces."""
-        return [noop.NoRAID]
+        return [legacy_noop.NoRAID]
 
     @property
     def supported_rescue_interfaces(
         self,
     ) -> Sequence[type[base.RescueInterface]]:
         """List of supported rescue interfaces."""
-        return [noop.NoRescue]
+        return [legacy_noop.NoRescue]
 
     @property
     def supported_storage_interfaces(
@@ -125,14 +125,14 @@ class AbstractHardwareType(abc.ABC):
         self,
     ) -> Sequence[type[base.VendorInterface]]:
         """List of supported vendor interfaces."""
-        return [noop.NoVendor]
+        return [legacy_noop.NoVendor]
 
     @property
     def supported_firmware_interfaces(
         self,
     ) -> Sequence[type[base.FirmwareInterface]]:
         """List of supported firmware interfaces."""
-        return [noop.NoFirmware]
+        return [legacy_noop.NoFirmware]
 
     def get_properties(self) -> dict[str, Any]:
         """Get the properties of the hardware type.

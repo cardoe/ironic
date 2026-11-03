@@ -16,7 +16,7 @@
 from ironic.drivers import generic
 from ironic.drivers.modules import agent
 from ironic.drivers.modules import ipmitool
-from ironic.drivers.modules import noop
+from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import noop_mgmt
 from ironic.drivers.modules.redfish import bios as redfish_bios
 from ironic.drivers.modules.redfish import boot as redfish_boot
@@ -35,7 +35,7 @@ class RedfishHardware(generic.GenericHardware):
     @property
     def supported_bios_interfaces(self):
         """List of supported bios interfaces."""
-        return [redfish_bios.RedfishBIOS, noop.NoBIOS]
+        return [redfish_bios.RedfishBIOS, legacy_noop.NoBIOS]
 
     @property
     def supported_management_interfaces(self):
@@ -65,16 +65,16 @@ class RedfishHardware(generic.GenericHardware):
     @property
     def supported_vendor_interfaces(self):
         """List of supported vendor interfaces."""
-        return [redfish_vendor.RedfishVendorPassthru, noop.NoVendor]
+        return [redfish_vendor.RedfishVendorPassthru, legacy_noop.NoVendor]
 
     @property
     def supported_raid_interfaces(self):
         """List of supported raid interfaces."""
-        return [redfish_raid.RedfishRAID, noop.NoRAID, agent.AgentRAID]
+        return [redfish_raid.RedfishRAID, legacy_noop.NoRAID, agent.AgentRAID]
 
     @property
     def supported_firmware_interfaces(self):
-        return [redfish_firmware.RedfishFirmware, noop.NoFirmware]
+        return [redfish_firmware.RedfishFirmware, legacy_noop.NoFirmware]
 
     @property
     def supported_console_interfaces(self):

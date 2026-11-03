@@ -14,7 +14,7 @@ from ironic.conductor import task_manager
 from ironic.drivers.modules import agent
 from ironic.drivers.modules.intel_ipmi import management as intel_management
 from ironic.drivers.modules import ipmitool
-from ironic.drivers.modules import noop
+from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import pxe
 from ironic.drivers.modules.storage import cinder
 from ironic.drivers.modules.storage import noop as noop_storage
@@ -49,10 +49,10 @@ class IntelIPMIHardwareTestCase(db_base.DbTestCase):
             kwargs.get('deploy', agent.AgentDeploy))
         self.assertIsInstance(
             task.driver.console,
-            kwargs.get('console', noop.NoConsole))
+            kwargs.get('console', legacy_noop.NoConsole))
         self.assertIsInstance(
             task.driver.raid,
-            kwargs.get('raid', noop.NoRAID))
+            kwargs.get('raid', legacy_noop.NoRAID))
         self.assertIsInstance(
             task.driver.vendor,
             kwargs.get('vendor', ipmitool.VendorPassthru))
@@ -61,7 +61,7 @@ class IntelIPMIHardwareTestCase(db_base.DbTestCase):
             kwargs.get('storage', noop_storage.NoopStorage))
         self.assertIsInstance(
             task.driver.rescue,
-            kwargs.get('rescue', noop.NoRescue))
+            kwargs.get('rescue', legacy_noop.NoRescue))
 
     def test_default_interfaces(self):
         node = obj_utils.create_test_node(self.context, driver='intel-ipmi')
