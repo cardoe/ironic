@@ -21,14 +21,16 @@ from ironic.drivers.modules import agent
 from ironic.drivers.modules import agent_power
 from ironic.drivers.modules.ansible import deploy as ansible_deploy
 from ironic.drivers.modules import autodetect
+from ironic.drivers.modules import deny
 from ironic.drivers.modules import fake
 from ironic.drivers.modules import inspector
 from ironic.drivers.modules import ipxe
 from ironic.drivers.modules.network import flat as flat_net
 from ironic.drivers.modules.network import ironic_networking
 from ironic.drivers.modules.network import neutron
-from ironic.drivers.modules.network import noop as noop_net
 from ironic.drivers.modules import legacy_noop
+from ironic.drivers.modules.network import noop as noop_net
+from ironic.drivers.modules import noop
 from ironic.drivers.modules import noop_mgmt
 from ironic.drivers.modules import pxe
 from ironic.drivers.modules import ramdisk
@@ -46,7 +48,8 @@ class GenericHardware(hardware_type.AbstractHardwareType):
     @property
     def supported_boot_interfaces(self):
         """List of supported boot interfaces."""
-        return [ipxe.iPXEBoot, pxe.PXEBoot, ipxe.iPXEHttpBoot, pxe.HttpBoot]
+        return [ipxe.iPXEBoot, pxe.PXEBoot, ipxe.iPXEHttpBoot, pxe.HttpBoot,
+                deny.DenyBoot, noop.NoopBoot]
 
     @property
     def supported_deploy_interfaces(self):
@@ -54,50 +57,65 @@ class GenericHardware(hardware_type.AbstractHardwareType):
         return [autodetect.AutodetectDeploy, agent.AgentDeploy,
                 ansible_deploy.AnsibleDeploy, ramdisk.RamdiskDeploy,
                 pxe.PXEAnacondaDeploy, agent.BootcAgentDeploy,
-                agent.CustomAgentDeploy]
+                agent.CustomAgentDeploy, deny.DenyDeploy]
+
+    @property
+    def supported_bios_interfaces(self):
+        """List of supported bios interfaces."""
+        return [legacy_noop.NoBIOS, deny.DenyBIOS, noop.NoopBIOS]
 
     @property
     def supported_inspect_interfaces(self):
         """List of supported inspect interfaces."""
         # Inspector support should be the default if it's enabled by an
         # operator (implying that the service is installed).
-        return [inspector.AgentInspect, legacy_noop.NoInspect]
+        return [inspector.AgentInspect, legacy_noop.NoInspect,
+                deny.DenyInspect, noop.NoopInspect]
 
     @property
     def supported_network_interfaces(self):
         """List of supported network interfaces."""
         return [flat_net.FlatNetwork, neutron.NeutronNetwork,
-                ironic_networking.IronicNetworking, noop_net.NoopNetwork]
+                ironic_networking.IronicNetworking, noop_net.NoopNetwork,
+                deny.DenyNetwork]
 
     @property
     def supported_raid_interfaces(self):
         """List of supported raid interfaces."""
         # AgentRAID requires RAID bits on the IPA image that are not shipped by
         # default. Hence, even if AgentRAID is enabled, NoRAID is the default.
-        return [legacy_noop.NoRAID, agent.AgentRAID]
+        return [legacy_noop.NoRAID, agent.AgentRAID, deny.DenyRAID,
+                noop.NoopRAID]
 
     @property
     def supported_rescue_interfaces(self):
         """List of supported rescue interfaces."""
         # AgentRescue requires IPA with the rescue extension enabled, so
         # NoRescue is the default
-        return [legacy_noop.NoRescue, agent.AgentRescue]
+        return [legacy_noop.NoRescue, agent.AgentRescue, deny.DenyRescue,
+                noop.NoopRescue]
 
     @property
     def supported_storage_interfaces(self):
         """List of supported storage interfaces."""
         return [noop_storage.NoopStorage, cinder.CinderStorage,
-                external_storage.ExternalStorage]
+                external_storage.ExternalStorage, deny.DenyStorage]
 
     @property
     def supported_firmware_interfaces(self):
         """List of supported firmware interfaces."""
-        return [legacy_noop.NoFirmware]
+        return [legacy_noop.NoFirmware, deny.DenyFirmware, noop.NoopFirmware]
 
     @property
     def supported_console_interfaces(self):
         """List of classes of supported console interfaces."""
-        return [legacy_noop.NoConsole, fake.FakeGraphicalConsole]
+        return [legacy_noop.NoConsole, fake.FakeGraphicalConsole,
+                deny.DenyConsole, noop.NoopConsole]
+
+    @property
+    def supported_vendor_interfaces(self):
+        """List of supported vendor interfaces."""
+        return [legacy_noop.NoVendor, deny.DenyVendor, noop.NoopVendor]
 
 
 class ManualManagementHardware(GenericHardware):
@@ -118,14 +136,11 @@ class ManualManagementHardware(GenericHardware):
     @property
     def supported_management_interfaces(self):
         """List of supported management interfaces."""
-        return [noop_mgmt.NoopManagement, fake.FakeManagement]
+        return [noop_mgmt.NoopManagement, fake.FakeManagement,
+                deny.DenyManagement]
 
     @property
     def supported_power_interfaces(self):
         """List of supported power interfaces."""
-        return [agent_power.AgentPower, fake.FakePower]
-
-    @property
-    def supported_vendor_interfaces(self):
-        """List of supported vendor interfaces."""
-        return [legacy_noop.NoVendor]
+        return [agent_power.AgentPower, fake.FakePower, deny.DenyPower,
+                noop.NoopPower]

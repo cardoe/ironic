@@ -15,8 +15,10 @@
 
 from ironic.drivers import generic
 from ironic.drivers.modules import agent
+from ironic.drivers.modules import deny
 from ironic.drivers.modules import ipmitool
 from ironic.drivers.modules import legacy_noop
+from ironic.drivers.modules import noop
 from ironic.drivers.modules import noop_mgmt
 from ironic.drivers.modules.redfish import bios as redfish_bios
 from ironic.drivers.modules.redfish import boot as redfish_boot
@@ -35,17 +37,19 @@ class RedfishHardware(generic.GenericHardware):
     @property
     def supported_bios_interfaces(self):
         """List of supported bios interfaces."""
-        return [redfish_bios.RedfishBIOS, legacy_noop.NoBIOS]
+        return [redfish_bios.RedfishBIOS, legacy_noop.NoBIOS, deny.DenyBIOS,
+                noop.NoopBIOS]
 
     @property
     def supported_management_interfaces(self):
         """List of supported management interfaces."""
-        return [redfish_mgmt.RedfishManagement, noop_mgmt.NoopManagement]
+        return [redfish_mgmt.RedfishManagement, noop_mgmt.NoopManagement,
+                deny.DenyManagement]
 
     @property
     def supported_power_interfaces(self):
         """List of supported power interfaces."""
-        return [redfish_power.RedfishPower]
+        return [redfish_power.RedfishPower, deny.DenyPower, noop.NoopPower]
 
     @property
     def supported_inspect_interfaces(self):
@@ -65,16 +69,19 @@ class RedfishHardware(generic.GenericHardware):
     @property
     def supported_vendor_interfaces(self):
         """List of supported vendor interfaces."""
-        return [redfish_vendor.RedfishVendorPassthru, legacy_noop.NoVendor]
+        return [redfish_vendor.RedfishVendorPassthru, legacy_noop.NoVendor,
+                deny.DenyVendor, noop.NoopVendor]
 
     @property
     def supported_raid_interfaces(self):
         """List of supported raid interfaces."""
-        return [redfish_raid.RedfishRAID, legacy_noop.NoRAID, agent.AgentRAID]
+        return [redfish_raid.RedfishRAID, legacy_noop.NoRAID, agent.AgentRAID,
+                deny.DenyRAID, noop.NoopRAID]
 
     @property
     def supported_firmware_interfaces(self):
-        return [redfish_firmware.RedfishFirmware, legacy_noop.NoFirmware]
+        return [redfish_firmware.RedfishFirmware, legacy_noop.NoFirmware,
+                deny.DenyFirmware, noop.NoopFirmware]
 
     @property
     def supported_console_interfaces(self):

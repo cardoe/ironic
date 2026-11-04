@@ -8,7 +8,8 @@ features:
     registered for the ``bios``, ``boot``, ``console``, ``firmware``,
     ``inspect``, ``power``, ``raid``, ``rescue`` and ``vendor`` interface
     types; the existing ``noop`` entry points for ``deploy``, ``management``,
-    ``network`` and ``storage`` are unchanged. Both set ``skip_periodics``. See
+    ``network`` and ``storage`` are unchanged. Both set ``skip_periodics``. They are supported by the
+    ``redfish`` and ``manual-management`` hardware types. See
     :doc:`/admin/interfaces/deny-noop` for details.
 other:
   - |
