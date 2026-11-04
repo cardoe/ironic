@@ -7,12 +7,19 @@ features:
     interface passes validation and does nothing. The ``noop`` name is
     registered for the ``bios``, ``boot``, ``console``, ``firmware``,
     ``inspect``, ``power``, ``raid``, ``rescue`` and ``vendor`` interface
-    types; the existing ``noop`` entry points for ``deploy``, ``management``,
-    ``network`` and ``storage`` are unchanged. Both set ``skip_periodics``. They are supported by the
-    ``redfish`` and ``manual-management`` hardware types. See
+    types and for ``deploy``; the existing ``noop`` entry points for
+    ``management``, ``network`` and ``storage`` are unchanged. Both set
+    ``skip_periodics``. They are supported by the ``redfish`` and
+    ``manual-management`` hardware types. See
     :doc:`/admin/interfaces/deny-noop` for details.
-other:
+upgrade:
   - |
-    The module ``ironic.drivers.modules.noop`` was renamed to
-    ``ironic.drivers.modules.legacy_noop``. The ``no-*`` and ``noop``
-    entry point names are unchanged.
+    The classes previously in ``ironic.drivers.modules.noop`` (``NoBIOS``,
+    ``NoConsole``, ``NoDeploy``, ``NoFirmware``, ``NoInspect``, ``NoRAID``,
+    ``NoRescue`` and ``NoVendor``) were removed, and the module now contains
+    the new ``noop`` interfaces. The ``no-*`` entry points keep working and now
+    load the equivalent ``deny`` implementations, and the ``noop`` deploy
+    entry point loads ``ironic.drivers.modules.noop.NoopDeploy``. Behavior is
+    unchanged. Out-of-tree code that imports the removed classes needs to use
+    the classes in ``ironic.drivers.modules.deny`` or
+    ``ironic.drivers.modules.noop`` instead.

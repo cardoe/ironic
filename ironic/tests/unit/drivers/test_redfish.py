@@ -15,7 +15,7 @@
 
 from ironic.conductor import task_manager
 from ironic.drivers.modules import agent
-from ironic.drivers.modules import legacy_noop
+from ironic.drivers.modules import deny
 from ironic.drivers.modules.redfish import boot as redfish_boot
 from ironic.drivers.modules.redfish import inspect as redfish_inspect
 from ironic.drivers.modules.redfish import management as redfish_mgmt
@@ -48,5 +48,5 @@ class RedfishHardwareTestCase(db_base.DbTestCase):
             self.assertIsInstance(task.driver.boot,
                                   redfish_boot.RedfishVirtualMediaBoot)
             self.assertIsInstance(task.driver.deploy, agent.AgentDeploy)
-            self.assertIsInstance(task.driver.console, legacy_noop.NoConsole)
-            self.assertIsInstance(task.driver.raid, legacy_noop.NoRAID)
+            self.assertIsInstance(task.driver.console, deny.DenyConsole)
+            self.assertIsInstance(task.driver.raid, deny.DenyRAID)

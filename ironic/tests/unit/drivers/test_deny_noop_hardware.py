@@ -20,7 +20,7 @@ from ironic.tests.unit.db import base as db_base
 from ironic.tests.unit.objects import utils as obj_utils
 
 # Entry point name 'noop' is already used by other classes for these.
-_NO_NOOP_ENTRY = {'deploy', 'management', 'network', 'storage'}
+_NO_NOOP_ENTRY = {'management', 'network', 'storage'}
 
 
 class SupportedInterfacesTestCase(db_base.DbTestCase):

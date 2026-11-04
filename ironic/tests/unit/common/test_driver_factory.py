@@ -23,8 +23,8 @@ from ironic.conductor import task_manager
 from ironic.drivers import base as drivers_base
 from ironic.drivers import fake_hardware
 from ironic.drivers import hardware_type
+from ironic.drivers.modules import deny
 from ironic.drivers.modules import fake
-from ironic.drivers.modules import legacy_noop
 from ironic.tests import base
 from ironic.tests.unit.db import base as db_base
 from ironic.tests.unit.objects import utils as obj_utils
@@ -474,7 +474,7 @@ class HardwareTypeLoadTestCase(db_base.DbTestCase):
             for iface in drivers_base.ALL_INTERFACES:
                 impl = getattr(task.driver, iface)
                 self.assertIsNotNone(impl)
-            self.assertIsInstance(task.driver.raid, legacy_noop.NoRAID)
+            self.assertIsInstance(task.driver.raid, deny.DenyRAID)
 
     @mock.patch.object(driver_factory, 'get_hardware_type', autospec=True,
                        return_value=TestFakeHardware())

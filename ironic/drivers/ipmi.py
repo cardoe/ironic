@@ -15,8 +15,8 @@ Hardware type for IPMI (using ipmitool).
 """
 
 from ironic.drivers import generic
+from ironic.drivers.modules import deny
 from ironic.drivers.modules import ipmitool
-from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import noop_mgmt
 
 
@@ -47,4 +47,4 @@ class IPMIHardware(generic.GenericHardware):
     @property
     def supported_vendor_interfaces(self):
         """List of supported vendor interfaces."""
-        return [ipmitool.VendorPassthru, legacy_noop.NoVendor]
+        return [ipmitool.VendorPassthru, deny.DenyVendor]

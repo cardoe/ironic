@@ -13,8 +13,8 @@ purpose. They are implemented for every interface type (``bios``, ``boot``,
     Explicitly refuses the feature. Validation fails and every action raises
     ``UnsupportedDriverExtension``, except for caching BIOS settings and
     firmware components, which the conductor does on a best-effort basis and
-    which therefore succeed without doing anything. Use it when something must *never*
-    happen to a node.
+    which therefore succeed without doing anything. Use it when something must
+    *never* happen to a node.
 
 ``noop``
     Accepts the feature and does nothing. Validation passes, actions succeed
@@ -52,7 +52,7 @@ Entry point names
 -----------------
 
 The ``deny`` name is available for every interface type. The ``noop`` name
-already existed for four interface types before these families were
+already existed for three interface types before these families were
 introduced, and keeps its original meaning there:
 
 ====================  ==================================================
@@ -61,7 +61,7 @@ Interface type        ``noop`` refers to
 ``bios``              new ``NoopBIOS``
 ``boot``              new ``NoopBoot``
 ``console``           new ``NoopConsole``
-``deploy``            existing ``NoDeploy`` (``legacy_noop``)
+``deploy``            new ``NoopDeploy``
 ``firmware``          new ``NoopFirmware``
 ``inspect``           new ``NoopInspect``
 ``management``        existing ``NoopManagement`` (``noop_mgmt``)
@@ -74,12 +74,16 @@ Interface type        ``noop`` refers to
 ====================  ==================================================
 
 The older ``no-bios``, ``no-console``, ``no-firmware``, ``no-inspect``,
-``no-raid``, ``no-rescue`` and ``no-vendor`` interfaces are implemented in
-``ironic.drivers.modules.legacy_noop``. They mix both behaviours: they fail
-validation and most actions like ``deny``, but a few methods (for example
-``no-bios`` caching BIOS settings) silently succeed, and the ``noop`` deploy
-interface succeeds at everything. They remain unchanged for compatibility and
-are the defaults of many hardware types.
+``no-raid``, ``no-rescue`` and ``no-vendor`` names are kept for compatibility
+and are the defaults of many hardware types. They are aliases of ``deny`` for
+the same interface type, and the ``noop`` deploy interface is the same as the
+new ``NoopDeploy``. Nodes that already use these names keep working.
+
+.. note::
+   Because an alias and its ``deny`` counterpart are the same implementation,
+   do not enable both in the same ``enabled_*_interfaces`` option. Ironic
+   maps implementations back to names when it picks a default interface, so
+   with both enabled the default may be either name.
 
 Example: protecting a node from changes
 =======================================

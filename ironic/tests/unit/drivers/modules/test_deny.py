@@ -94,6 +94,15 @@ class DenyInterfacesTestCase(test_base.TestCase):
         self.assertIsNone(
             deny.DenyFirmware().cache_firmware_components(self.task))
 
+    def test_legacy_names_are_aliases(self):
+        for itype in ('bios', 'console', 'firmware', 'inspect', 'raid',
+                      'rescue', 'vendor'):
+            with self.subTest(interface=itype):
+                mgr = stevedore.extension.ExtensionManager(
+                    'ironic.hardware.interfaces.%s' % itype,
+                    invoke_on_load=False)
+                self.assertIs(mgr['deny'].plugin, mgr['no-%s' % itype].plugin)
+
     def test_power_flags(self):
         iface = deny.DenyPower()
         self.assertEqual([], iface.get_supported_power_states(self.task))

@@ -16,11 +16,11 @@ from oslo_utils import uuidutils
 
 from ironic.conductor import task_manager
 from ironic.drivers.modules import agent
+from ironic.drivers.modules import deny
 from ironic.drivers.modules import drac
 from ironic.drivers.modules import inspector
 from ironic.drivers.modules import ipxe
 from ironic.drivers.modules.network import flat as flat_net
-from ironic.drivers.modules import legacy_noop
 from ironic.drivers.modules import redfish
 from ironic.drivers.modules.storage import noop as noop_storage
 from ironic.tests.unit.db import base as db_base
@@ -69,7 +69,7 @@ class IDRACHardwareTestCase(db_base.DbTestCase):
 
         self.assertIsInstance(
             driver.console,
-            kwargs.get('console', legacy_noop.NoConsole))
+            kwargs.get('console', deny.DenyConsole))
 
         self.assertIsInstance(
             driver.inspect,
@@ -106,7 +106,7 @@ class IDRACHardwareTestCase(db_base.DbTestCase):
 
     def test_override_with_raid(self):
         for iface, impl in [('agent', agent.AgentRAID),
-                            ('no-raid', legacy_noop.NoRAID)]:
+                            ('no-raid', deny.DenyRAID)]:
             node = obj_utils.create_test_node(self.context,
                                               uuid=uuidutils.generate_uuid(),
                                               driver='idrac',
@@ -126,7 +126,7 @@ class IDRACHardwareTestCase(db_base.DbTestCase):
     def test_override_with_redfish_vendor(self):
         for iface, impl in [('redfish',
                              redfish.vendor.RedfishVendorPassthru),
-                            ('no-vendor', legacy_noop.NoVendor)]:
+                            ('no-vendor', deny.DenyVendor)]:
             node = obj_utils.create_test_node(self.context,
                                               uuid=uuidutils.generate_uuid(),
                                               driver='idrac',
@@ -147,7 +147,7 @@ class IDRACHardwareTestCase(db_base.DbTestCase):
 
     def test_override_with_redfish_bios(self):
         for iface, impl in [('redfish', redfish.bios.RedfishBIOS),
-                            ('no-bios', legacy_noop.NoBIOS)]:
+                            ('no-bios', deny.DenyBIOS)]:
             node = obj_utils.create_test_node(self.context,
                                               uuid=uuidutils.generate_uuid(),
                                               driver='idrac',

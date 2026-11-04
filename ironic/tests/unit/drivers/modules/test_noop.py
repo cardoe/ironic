@@ -31,7 +31,7 @@ _CLASSES = [
 ]
 
 # Groups where the entry point name 'noop' already maps to a legacy class.
-_LEGACY_NOOP_NAMES = {'deploy', 'management', 'network', 'storage'}
+_LEGACY_NOOP_NAMES = {'management', 'network', 'storage'}
 
 
 class NoopInterfacesTestCase(test_base.TestCase):
@@ -143,6 +143,11 @@ class NoopInterfacesTestCase(test_base.TestCase):
         iface = noop.NoopVendor()
         self.assertIsNone(iface.validate(self.task, method='x'))
         self.assertIsNone(iface.driver_validate('x'))
+
+    def test_deploy_legacy_name(self):
+        mgr = stevedore.extension.ExtensionManager(
+            'ironic.hardware.interfaces.deploy', invoke_on_load=False)
+        self.assertIs(noop.NoopDeploy, mgr['noop'].plugin)
 
     def test_entry_points(self):
         for cls, itype in _CLASSES:
