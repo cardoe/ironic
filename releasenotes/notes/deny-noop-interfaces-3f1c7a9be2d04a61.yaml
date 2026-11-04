@@ -1,0 +1,17 @@
+---
+features:
+  - |
+    Adds ``deny`` and ``noop`` implementations of every hardware interface
+    type. A ``deny`` interface fails validation and raises
+    ``UnsupportedDriverExtension`` for every action, while a ``noop``
+    interface passes validation and does nothing. The ``noop`` name is
+    registered for the ``bios``, ``boot``, ``console``, ``firmware``,
+    ``inspect``, ``power``, ``raid``, ``rescue`` and ``vendor`` interface
+    types; the existing ``noop`` entry points for ``deploy``, ``management``,
+    ``network`` and ``storage`` are unchanged. Both set ``skip_periodics``. See
+    :doc:`/admin/interfaces/deny-noop` for details.
+other:
+  - |
+    The module ``ironic.drivers.modules.noop`` was renamed to
+    ``ironic.drivers.modules.legacy_noop``. The ``no-*`` and ``noop``
+    entry point names are unchanged.

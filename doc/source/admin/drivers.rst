@@ -59,6 +59,7 @@ Generic Interfaces
 
   interfaces/boot
   interfaces/deploy
+  interfaces/deny-noop
 
 Hardware Types
 --------------
