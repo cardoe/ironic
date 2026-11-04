@@ -114,6 +114,15 @@ class NodePeriodicTestCase(db_base.DbTestCase):
         self.uuid = uuidutils.generate_uuid()
         self.node = obj_utils.create_test_node(self.context, uuid=self.uuid)
 
+    def test_skip_periodics(self, mock_iter_nodes):
+        iface = PeriodicTestInterface(self)
+        iface.skip_periodics = True
+
+        iface.simple(self.service, self.ctx)
+
+        self.assertFalse(mock_iter_nodes.called)
+        self.assertEqual([], iface.nodes)
+
     @mock.patch.object(periodics.LOG, 'info', autospec=True)
     def test_simple(self, mock_log, mock_iter_nodes):
         node2 = obj_utils.create_test_node(self.context,

@@ -286,6 +286,15 @@ class BaseInterface(abc.ABC):
     interface_type = 'base'
     """Interface type, used for clean steps and logging."""
 
+    skip_periodics = False
+    """Whether the conductor should skip periodic tasks for this interface.
+
+    Set to True by interfaces that cannot do any meaningful work (for example
+    the ``deny`` and ``noop`` implementations), so the conductor does not
+    lock nodes and poll them (power sync, sensor data, interface periodics)
+    for no benefit.
+    """
+
     clean_steps: list[CleanStep]
     deploy_steps: list[DeployStep]
     verify_steps: list[VerifyStep]

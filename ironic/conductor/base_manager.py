@@ -383,6 +383,10 @@ class BaseConductorManager(object):
             :param obj: the object to collect tasks from.
             :param args: a tuple of arguments to pass to tasks.
             """
+            if getattr(obj, 'skip_periodics', False) is True:
+                # NOTE: interfaces such as noop and deny do no real work, so
+                # there is nothing to run periodically for them.
+                return
             if obj and obj.__class__ not in periodic_task_classes:
                 for name, member in inspect.getmembers(obj):
                     if periodics.is_periodic(member):

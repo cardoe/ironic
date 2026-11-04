@@ -175,6 +175,9 @@ def node_periodic(purpose, spacing, enabled=True, filters=None,
                               if isinstance(self, driver_base.BaseInterface)
                               else None)
 
+            if getattr(self, 'skip_periodics', False) is True:
+                return
+
             if callable(limit):
                 local_limit = limit()
             else:
