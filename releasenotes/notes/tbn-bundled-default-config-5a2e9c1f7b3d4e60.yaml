@@ -1,0 +1,21 @@
+---
+features:
+  - |
+    Ironic now bundles a default Trait Based Networking (TBN) configuration.
+    When ``[conductor]enable_trait_based_networking`` is ``True`` and
+    ``[conductor]trait_based_networking_config_file`` is not set, the bundled
+    configuration is used. It defines the ``CUSTOM_DEFAULT_TBN_TRAIT`` trait
+    with a single ``attach_port`` action that attaches the first available
+    port.
+upgrade:
+  - |
+    Trait Based Networking is now enabled by default:
+    ``[conductor]enable_trait_based_networking`` defaults to ``True``.
+    Operators wishing to keep the previous port selection behavior should set
+    it to ``False``.
+  - |
+    ``[conductor]trait_based_networking_config_file`` no longer defaults to
+    ``/etc/ironic/trait_based_networking.yaml``. It is now unset by default,
+    in which case the configuration bundled with Ironic is used. Operators
+    relying on the previous default location must now set the option
+    explicitly.

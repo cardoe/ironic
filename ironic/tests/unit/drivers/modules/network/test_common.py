@@ -810,6 +810,9 @@ class TestNeutronVifPortIDMixin(db_base.DbTestCase):
     def setUp(self):
         super(TestNeutronVifPortIDMixin, self).setUp()
         self.interface = common.NeutronVIFPortIDMixin()
+        # TBN is enabled by default; these tests exercise the legacy
+        # vif_attach path unless a test explicitly enables TBN.
+        self.config(enable_trait_based_networking=False, group='conductor')
         self.node = obj_utils.create_test_node(self.context,
                                                network_interface='neutron')
         # TBN looks up the neutron port and network of the VIF.
@@ -1124,6 +1127,26 @@ class TestNeutronVifPortIDMixin(db_base.DbTestCase):
             self.assertEqual(mock_save.call_args_list[0][0][0].id,
                              self.port.id)
             self.assertEqual(mock_save.call_args_list[0][0][1], vif_info['id'])
+
+    @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
+                       autospec=True)
+    @mock.patch.object(neutron_common, 'get_client', autospec=True)
+    def test_vif_attach_trait_based_networking_bundled_config(
+            self, mock_client, mock_save):
+        # No node traits and no configured TBN file: the default trait from
+        # the configuration bundled with ironic applies.
+        self.port.internal_info = {}
+        self.port.save()
+        vif_info = {'id': 'fake_vif_id'}
+
+        self.config(enable_trait_based_networking=True, group='conductor')
+        self.assertIsNone(CONF.conductor.trait_based_networking_config_file)
+
+        with task_manager.acquire(self.context, self.node.id) as task:
+            self.interface.vif_attach(task, vif_info)
+
+        mock_save.assert_called_once_with(mock.ANY, vif_info['id'])
+        self.assertEqual(self.port.id, mock_save.call_args[0][0].id)
 
     @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
                        autospec=True)

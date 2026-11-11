@@ -11,27 +11,40 @@ TBN applies to OpenStack installations utilizing Ironic, Neutron, and Nova
 that want dynamic port scheduling based on networks and flavors chosen by the
 instance creator.
 
-In order to use this feature, a few steps must be completed.
+Trait Based Networking is enabled by default. To use it, a few steps must be
+completed.
 
-#. Enable Trait Based Networking in the ironic-conductor service configuration:
+#. Ensure Trait Based Networking is enabled in the ironic-conductor service
+   configuration:
 
    .. code-block:: ini
 
        [conductor]
 
-       # Enables Trait Based Networking, defaults to False
+       # Enables Trait Based Networking, defaults to True
        enable_trait_based_networking=True
 
-#. Place a TBN configuration file in the configured location. The default
-   location is: ``/etc/ironic/trait_based_networking.yaml``.
+#. Optionally, supply a TBN configuration file:
+
+   .. code-block:: ini
+
+       [conductor]
+
+       trait_based_networking_config_file=/etc/ironic/trait_based_networking.yaml
 
    For discussion of the syntax and format of the configuration file refer to
    :ref:`tbn-config-file`.
 
-   The default configuration which ships with Ironic is reproduced below:
+   If ``trait_based_networking_config_file`` is not set, the default
+   configuration bundled with Ironic is used. It is reproduced below:
 
-    .. include:: ../../../etc/ironic/trait_based_networks.yaml.sample
-        :code: yaml
+   .. literalinclude:: ../../../ironic/common/trait_based_networking/default_config.yaml
+       :language: yaml
+
+   A more complete example configuration file also ships with Ironic:
+
+   .. literalinclude:: ../../../etc/ironic/trait_based_networks.yaml.sample
+       :language: yaml
 
 #. Set desired TBN traits on a node's ``instance_info.traits``. Trait names
    must match exactly for a TBN trait to be applied.

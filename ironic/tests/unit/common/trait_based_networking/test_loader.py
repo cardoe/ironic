@@ -10,12 +10,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from ironic.common.trait_based_networking import base as tbn_base
+from ironic.common.trait_based_networking import defaults
+from ironic.common.trait_based_networking import loader
 from ironic.common.trait_based_networking.loader import ConfigLoader
+from ironic.conf import CONF
 
 from ironic.tests import base
 
+import os
 import tempfile
 import time
+from unittest import mock
 
 
 class TraitBasedNetworkingConfigLoaderTestCase(base.TestCase):
@@ -86,3 +92,48 @@ class TraitBasedNetworkingConfigLoaderTestCase(base.TestCase):
                 self.assertEqual(len(cl.traits), 1)
                 self.assertEqual(cl.traits[0].name,
                                  "CUSTOM_TRAIT_NAME_CHANGED")
+
+    def test_bundled_config_exists(self):
+        self.assertTrue(loader.bundled_config().is_file())
+
+    def test_config_loader_uses_bundled_config(self):
+        self.config(enable_trait_based_networking=True, group='conductor')
+        self.assertIsNone(CONF.conductor.trait_based_networking_config_file)
+
+        cl = ConfigLoader()
+        self.assertTrue(cl.valid)
+        self.assertEqual(1, len(cl.traits))
+        trait = cl.traits[0]
+        self.assertEqual(defaults.DEFAULT_TRAIT_NAME, trait.name)
+        self.assertEqual(1, len(trait.actions))
+        self.assertEqual(tbn_base.Actions.ATTACH_PORT,
+                         trait.actions[0].action)
+        self.assertEqual(1, trait.actions[0].max_count)
+
+    def test_config_loader_bundled_config_loaded_once(self):
+        self.config(enable_trait_based_networking=True, group='conductor')
+        cl = ConfigLoader()
+        with mock.patch.object(cl, '_load_tbn_config',
+                               autospec=True) as mock_load:
+            cl.refresh()
+            mock_load.assert_not_called()
+
+    def test_config_loader_switch_from_bundled_to_file(self):
+        self.config(enable_trait_based_networking=True, group='conductor')
+        cl = ConfigLoader()
+        self.assertEqual(defaults.DEFAULT_TRAIT_NAME, cl.traits[0].name)
+
+        contents = ("CUSTOM_TRAIT_NAME:\n"
+                    "  actions:\n"
+                    "    - action: attach_port\n"
+                    "      filter: port.vendor == 'vendor_string'\n")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'tbn.yaml')
+            with open(path, 'w') as f:
+                f.write(contents)
+            self.config(trait_based_networking_config_file=path,
+                        group='conductor')
+            cl.refresh()
+
+        self.assertEqual(1, len(cl.traits))
+        self.assertEqual("CUSTOM_TRAIT_NAME", cl.traits[0].name)

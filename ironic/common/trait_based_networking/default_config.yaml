@@ -1,0 +1,10 @@
+# Default Trait Based Networking configuration bundled with Ironic.
+#
+# This file is used when [conductor]enable_trait_based_networking is True
+# and [conductor]trait_based_networking_config_file is not set. Operators
+# wanting different behavior should supply their own configuration file.
+CUSTOM_DEFAULT_TBN_TRAIT:
+  actions:
+    - action: attach_port
+      filter: port.is_port
+      max_count: 1

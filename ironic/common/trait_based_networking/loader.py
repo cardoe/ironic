@@ -16,6 +16,7 @@ from ironic.conf import CONF
 
 from oslo_log import log
 
+import importlib.resources
 import os
 import threading
 
@@ -24,6 +25,25 @@ LOG = log.getLogger(__name__)
 
 _LOADER_LOCK = threading.Lock()
 _CACHED_CONFIG_LOADER = None
+
+BUNDLED_CONFIG_PACKAGE = 'ironic.common.trait_based_networking'
+BUNDLED_CONFIG_FILE = 'default_config.yaml'
+
+
+def bundled_config():
+    """Return the TBN configuration bundled with Ironic.
+
+    :returns: An importlib.resources Traversable for the bundled
+        configuration file.
+    """
+    return importlib.resources.files(BUNDLED_CONFIG_PACKAGE).joinpath(
+        BUNDLED_CONFIG_FILE)
+
+
+def _config_source():
+    """The configured TBN file path, or the bundled config if unset."""
+    return (CONF.conductor.trait_based_networking_config_file
+            or bundled_config())
 
 
 def tbn_config_file_traits():
@@ -54,24 +74,30 @@ class ConfigLoader(object):
     """
     def __init__(self):
         self._last_mtime = None
+        self._last_path = None
+        self._checked = False
         self._config_file = None
         self._valid = False
         self.refresh()
 
     def _has_file_changed(self):
-        """Returns True if the underlying config file's mtime has changed."""
-        new_mtime = os.path.getmtime(
-            CONF.conductor.trait_based_networking_config_file)
+        """Returns True if the underlying config file has changed.
 
-        if self._last_mtime is None:
-            self._last_mtime = new_mtime
-            return True
+        A change is either a different configured file or a change in the
+        configured file's mtime. The bundled configuration ships with Ironic
+        and is only loaded once.
+        """
+        path = CONF.conductor.trait_based_networking_config_file
+        new_mtime = os.path.getmtime(path) if path else None
 
-        if self._last_mtime != new_mtime:
-            self._last_mtime = new_mtime
-            return True
+        if (self._checked and path == self._last_path
+                and new_mtime == self._last_mtime):
+            return False
 
-        return False
+        self._checked = True
+        self._last_path = path
+        self._last_mtime = new_mtime
+        return True
 
     def refresh(self):
         if self._has_file_changed():
@@ -94,21 +120,16 @@ class ConfigLoader(object):
                       'configuration file.')
             return
 
+        source = _config_source()
         LOG.info(('Loading Trait Based Networking configuration located at '
-                  '%(file_location)s'),
-                 {'file_location':
-                  CONF.conductor.trait_based_networking_config_file})
+                  '%(file_location)s'), {'file_location': source})
         try:
-            self._config_file = ConfigFile(
-                CONF.conductor.trait_based_networking_config_file)
+            self._config_file = ConfigFile(source)
         except OSError as err:
             self._valid = False
             LOG.error(('Failed to load Trait Based Networking configuration '
                        'file located at \'%(file)s\', error: %(err)s'), {
-                           'file':
-                               CONF.conductor.
-                               trait_based_networking_config_file,
-                           'err': err})
+                           'file': source, 'err': err})
             return
 
         valid, reasons = self._config_file.validate()
@@ -117,10 +138,7 @@ class ConfigLoader(object):
             self._valid = False
             LOG.error(('Configuration file for Trait Based Networking '
                        'located at \'%(file)s\' is invalid. Reasons '
-                       'follow:'), {
-                        'file': \
-                        CONF.conductor.trait_based_networking_config_file
-                     })
+                       'follow:'), {'file': source})
             for reason in reasons:
                 LOG.error(reason)
 

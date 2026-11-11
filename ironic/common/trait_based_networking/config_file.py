@@ -33,14 +33,24 @@ class ConfigFile(object):
         traits = cf.traits() # Get the parsed traits as a list.
     """
     def __init__(self, filename):
+        """Init a ConfigFile
+
+        :param filename: A path to the configuration file, or an
+            importlib.resources Traversable (anything with an ``open()``
+            method) for configuration bundled with Ironic.
+        """
         self._filename = filename
         self._traits = []
         # TODO(clif): Do this here, or defer to clients of class calling these?
         self.read()
 
     def read(self):
-        """Read the YAML YBN configuration file"""
-        with open(self._filename, 'r') as file:
+        """Read the YAML TBN configuration file"""
+        if hasattr(self._filename, 'open'):
+            file = self._filename.open('r')
+        else:
+            file = open(self._filename, 'r')
+        with file:
             self._contents = yaml.safe_load(file)
 
     def validate(self):

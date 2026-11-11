@@ -712,7 +712,7 @@ opts = [
     # NOTE(clif) Trait Based Networking related configuration.
     cfg.BoolOpt(
         'enable_trait_based_networking',
-        default=False,
+        default=True,
         help=_(
             'Enables Trait Based Networking (TBN) feature if True. When '
             'enabled, will apply traits defined in the TBN configuration file '
@@ -720,13 +720,13 @@ opts = [
             'traits defined.')),
     cfg.StrOpt(
         'trait_based_networking_config_file',
-        default='/etc/ironic/trait_based_networking.yaml',
         help=_(
             'The location of the configuration file for trait based '
             'configuration. Ironic will load this configuration file if TBN '
             'is enabled and apply the traits defined when building and '
             'attaching networks to node instances. Ironic will also reload '
-            'this file if it detects the file has changed.'
+            'this file if it detects the file has changed. If not set, the '
+            'default configuration bundled with Ironic is used.'
         )),
     cfg.BoolOpt('trait_based_networking_raise_when_no_match',
                 default=True,
