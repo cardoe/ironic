@@ -1618,9 +1618,9 @@ class ConductorManager(base_manager.BaseConductorManager):
                        'step': node.service_step.get('step')})
             # First transition to SERVICEFAIL
             task.process_event('fail')
-            # Then abort from SERVICEFAIL to ACTIVE
+            # Then abort from SERVICEFAIL to ACTIVE (or AVAILABLE)
             task.process_event(
-                'abort',
+                utils.service_abort_event(node),
                 callback=self._spawn_worker,
                 call_args=(servicing.do_node_service_abort, task),
                 err_handler=utils.provisioning_error_handler)
@@ -1696,7 +1696,7 @@ class ConductorManager(base_manager.BaseConductorManager):
                 raise exception.InvalidState(msg)
             # When someone is in service fail, its okay to abort.
             task.process_event(
-                'abort',
+                utils.service_abort_event(node),
                 callback=self._spawn_worker,
                 call_args=(servicing.do_node_service_abort,
                            task),
@@ -4323,7 +4323,8 @@ class ConductorManager(base_manager.BaseConductorManager):
                 'args': {'force': True} }
         :param disable_ramdisk: Optional. Whether to disable the ramdisk boot.
         :raises: InvalidParameterValue if power validation fails.
-        :raises: InvalidStateRequested if the node is not in manageable state.
+        :raises: InvalidStateRequested if the node is not in active or
+                 available state.
         :raises: NodeLocked if node is locked by another conductor.
         :raises: NoFreeConductorWorker when there is no free worker to start
                  async task.
@@ -4357,6 +4358,14 @@ class ConductorManager(base_manager.BaseConductorManager):
             conductor_steps.check_disallowed_steps(
                 service_steps, 'service', raise_on_disallowed=True)
 
+            # NOTE: A node serviced from AVAILABLE (or re-entering service
+            # after a failure or hold) is returned to AVAILABLE afterwards.
+            if states.AVAILABLE in (node.provision_state,
+                                    node.target_provision_state):
+                target_state = states.AVAILABLE
+            else:
+                target_state = states.ACTIVE
+
             try:
                 task.process_event(
                     'service',
@@ -4364,7 +4373,7 @@ class ConductorManager(base_manager.BaseConductorManager):
                     call_args=(servicing.do_node_service, task, service_steps,
                                disable_ramdisk),
                     err_handler=utils.provisioning_error_handler,
-                    target_state=states.ACTIVE)
+                    target_state=target_state)
             except exception.InvalidState:
                 raise exception.InvalidStateRequested(
                     action='service', node=node.uuid,

@@ -3894,6 +3894,109 @@ class DoNodeServiceTestCase(mgr_utils.ServiceSetUpMixin, db_base.DbTestCase):
 
     @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
                 autospec=True)
+    @mock.patch('ironic.drivers.modules.network.flat.FlatNetwork.validate',
+                autospec=True)
+    @mock.patch('ironic.drivers.modules.fake.FakePower.validate',
+                autospec=True)
+    def test_do_node_service_from_available(self, mock_pv, mock_nv,
+                                            mock_spawn):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.AVAILABLE,
+            target_provision_state=states.NOSTATE)
+        self._start_service()
+        self.service.do_node_service(self.context, node.uuid,
+                                     [{'step': 'foo',
+                                       'priority': 7,
+                                       'interface': 'management'}])
+        node.refresh()
+        self.assertEqual(states.SERVICING, node.provision_state)
+        self.assertEqual(states.AVAILABLE, node.target_provision_state)
+        mock_spawn.assert_any_call(
+            self.service, servicing.do_node_service, mock.ANY, mock.ANY,
+            False)
+
+    @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
+                autospec=True)
+    @mock.patch('ironic.drivers.modules.network.flat.FlatNetwork.validate',
+                autospec=True)
+    @mock.patch('ironic.drivers.modules.fake.FakePower.validate',
+                autospec=True)
+    def test_do_node_service_retry_from_servicefail_available(
+            self, mock_pv, mock_nv, mock_spawn):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICEFAIL,
+            target_provision_state=states.AVAILABLE)
+        self._start_service()
+        self.service.do_node_service(self.context, node.uuid,
+                                     [{'step': 'foo',
+                                       'priority': 7,
+                                       'interface': 'management'}])
+        node.refresh()
+        self.assertEqual(states.SERVICING, node.provision_state)
+        self.assertEqual(states.AVAILABLE, node.target_provision_state)
+
+    @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
+                autospec=True)
+    @mock.patch('ironic.drivers.modules.network.flat.FlatNetwork.validate',
+                autospec=True)
+    @mock.patch('ironic.drivers.modules.fake.FakePower.validate',
+                autospec=True)
+    def test_do_node_service_retry_from_servicefail_active(
+            self, mock_pv, mock_nv, mock_spawn):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICEFAIL,
+            target_provision_state=states.ACTIVE)
+        self._start_service()
+        self.service.do_node_service(self.context, node.uuid,
+                                     [{'step': 'foo',
+                                       'priority': 7,
+                                       'interface': 'management'}])
+        node.refresh()
+        self.assertEqual(states.SERVICING, node.provision_state)
+        self.assertEqual(states.ACTIVE, node.target_provision_state)
+
+    @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
+                autospec=True)
+    def test_do_provision_action_abort_from_servicefail_available(
+            self, mock_spawn):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICEFAIL,
+            target_provision_state=states.AVAILABLE)
+
+        self._start_service()
+        self.service.do_provisioning_action(self.context, node.uuid, 'abort')
+        node.refresh()
+        self.assertEqual(states.AVAILABLE, node.provision_state)
+        mock_spawn.assert_called_with(
+            self.service,
+            servicing.do_node_service_abort,
+            mock.ANY)
+
+    @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
+                autospec=True)
+    def test_do_provision_action_abort_service_wait_available(
+            self, mock_spawn):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICEWAIT,
+            target_provision_state=states.AVAILABLE,
+            service_step={'step': 'foo', 'abortable': True})
+
+        self._start_service()
+        self.service.do_provisioning_action(self.context, node.uuid, 'abort')
+        node.refresh()
+        self.assertEqual(states.AVAILABLE, node.provision_state)
+        mock_spawn.assert_called_with(
+            self.service,
+            servicing.do_node_service_abort,
+            mock.ANY)
+
+    @mock.patch('ironic.conductor.manager.ConductorManager._spawn_worker',
+                autospec=True)
     def test_do_node_provision_action_unhold_service(self, mock_spawn):
         node = obj_utils.create_test_node(
             self.context, driver='fake-hardware',

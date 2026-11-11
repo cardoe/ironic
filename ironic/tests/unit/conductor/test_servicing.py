@@ -1239,6 +1239,54 @@ class DoNodeServiceAbortTestCase(db_base.DbTestCase):
             prepare_mock.assert_not_called()
             power_mock.assert_not_called()
 
+    @mock.patch.object(fake.FakeBoot, 'prepare_instance', autospec=True)
+    @mock.patch.object(fake.FakePower, 'set_power_state', autospec=True)
+    @mock.patch.object(fake.FakeDeploy, 'tear_down_service', autospec=True)
+    def test_do_node_service_abort_from_available(self, tear_mock,
+                                                  power_mock, prepare_mock):
+        # A node serviced from available has no instance to restore.
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.AVAILABLE,
+            target_provision_state=states.NOSTATE,
+            driver_internal_info={
+                'agent_start_attempted': True,
+                'service_step_index': 2})
+
+        with task_manager.acquire(self.context, node.uuid) as task:
+            servicing.do_node_service_abort(task)
+            tear_mock.assert_called_once_with(mock.ANY, task)
+            prepare_mock.assert_not_called()
+            power_mock.assert_called_once_with(mock.ANY, task, 'power off')
+
+    @mock.patch.object(fake.FakeDeploy, 'restore_interface', autospec=True)
+    @mock.patch.object(fake.FakeDeploy, 'tear_down_service', autospec=True)
+    def test__tear_down_node_service_done_active(self, tear_mock,
+                                                 restore_mock):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICING,
+            target_provision_state=states.ACTIVE)
+
+        with task_manager.acquire(self.context, node.uuid) as task:
+            servicing._tear_down_node_service(task, disable_ramdisk=True)
+            self.assertEqual(states.ACTIVE, task.node.provision_state)
+            self.assertEqual(states.NOSTATE, task.node.target_provision_state)
+
+    @mock.patch.object(fake.FakeDeploy, 'restore_interface', autospec=True)
+    @mock.patch.object(fake.FakeDeploy, 'tear_down_service', autospec=True)
+    def test__tear_down_node_service_done_available(self, tear_mock,
+                                                    restore_mock):
+        node = obj_utils.create_test_node(
+            self.context, driver='fake-hardware',
+            provision_state=states.SERVICING,
+            target_provision_state=states.AVAILABLE)
+
+        with task_manager.acquire(self.context, node.uuid) as task:
+            servicing._tear_down_node_service(task, disable_ramdisk=True)
+            self.assertEqual(states.AVAILABLE, task.node.provision_state)
+            self.assertEqual(states.NOSTATE, task.node.target_provision_state)
+
 
 class DoNodeCleanTestChildNodes(db_base.DbTestCase):
     def setUp(self):

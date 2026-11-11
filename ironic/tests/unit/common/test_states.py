@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from ironic.common import state_machine
 from ironic.common import states
 from ironic.tests import base
 
@@ -34,3 +35,37 @@ class StatesTest(base.TestCase):
                     len(value), 15,
                     "Value for state: {} is greater than 15 characters".format(
                         key))
+
+
+class ServiceStateMachineTest(base.TestCase):
+
+    def _machine(self, state, target=None):
+        m = state_machine.machine.copy()
+        m.initialize(start_state=state, target_state=target)
+        return m
+
+    def test_service_from_available(self):
+        m = self._machine(states.AVAILABLE)
+        m.process_event('service', target_state=states.AVAILABLE)
+        self.assertEqual(states.SERVICING, m.current_state)
+        self.assertEqual(states.AVAILABLE, m.target_state)
+
+    def test_service_done_available(self):
+        m = self._machine(states.SERVICING, states.AVAILABLE)
+        m.process_event('done_available')
+        self.assertEqual(states.AVAILABLE, m.current_state)
+
+    def test_service_done_still_active(self):
+        m = self._machine(states.SERVICING, states.ACTIVE)
+        m.process_event('done')
+        self.assertEqual(states.ACTIVE, m.current_state)
+
+    def test_service_fail_abort_available(self):
+        m = self._machine(states.SERVICEFAIL, states.AVAILABLE)
+        m.process_event('abort_available')
+        self.assertEqual(states.AVAILABLE, m.current_state)
+
+    def test_service_fail_abort_still_active(self):
+        m = self._machine(states.SERVICEFAIL, states.ACTIVE)
+        m.process_event('abort')
+        self.assertEqual(states.ACTIVE, m.current_state)

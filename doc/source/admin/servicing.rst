@@ -9,8 +9,9 @@ Overview
 
 In order to better enable operators to modify existing nodes, Ironic has
 introduced the model of Node Servicing, where you can take a node in
-``active`` state, modify it using steps similar to Deploy Steps or manual
-cleaning through the Cleaning subsystem.
+``active`` or ``available`` state, modify it using steps similar to Deploy
+Steps or manual cleaning through the Cleaning subsystem. A node is returned to
+the state it was serviced from once servicing completes or is aborted.
 
 For more information on cleaning, please see :ref:`cleaning`.
 
@@ -54,16 +55,17 @@ In order for manual cleaning to work, you may need to configure a
 Starting manual servicing via API
 ---------------------------------
 
-Servicing can only be performed when a node is in the ``active``
-provision state. The REST API request to initiate it is available in
-API version 1.87 and higher::
+Servicing can only be performed when a node is in the ``active`` or
+``available`` provision state. The REST API request to initiate it is
+available in API version 1.87 and higher::
 
     PUT /v1/nodes/<node_ident>/states/provision
 
 (Additional information is available `here <https://docs.openstack.org/api-ref/baremetal/index.html?expanded=change-node-provision-state-detail#change-node-provision-state>`_.)
 
 This API will allow operators to put a node directly into ``servicing``
-provision state from ``active`` provision state via 'target': 'service'.
+provision state from ``active`` or ``available`` provision state via
+'target': 'service'.
 The PUT will also require the argument 'service_steps' to be specified. This
 is an ordered list of steps. A step is represented by a
 dictionary (JSON), in the form::

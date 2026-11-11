@@ -291,7 +291,7 @@ def _tear_down_node_service(task, disable_ramdisk):
     # Switch back to original interface, if necessary
     task.driver.deploy.restore_interface(task)
 
-    task.process_event('done')
+    task.process_event(utils.service_done_event(task.node))
 
 
 def execute_step_on_child_nodes(task, step):
@@ -378,10 +378,13 @@ def do_node_service_abort(task):
     try:
         # Use attempt-based logic instead of heartbeat-based
         agent_attempted = _was_agent_attempted(task)
+        # NOTE: A node serviced from AVAILABLE has no instance to restore.
+        restore_instance = (agent_attempted
+                            and node.provision_state != states.AVAILABLE)
         if agent_attempted:
             task.driver.power.set_power_state(task, states.POWER_OFF)
         task.driver.deploy.tear_down_service(task)
-        if agent_attempted:
+        if restore_instance:
             task.driver.boot.prepare_instance(task)
             task.driver.power.set_power_state(task, states.POWER_ON)
     except Exception as e:

@@ -2076,6 +2076,28 @@ def get_token_project_from_request(ctx):
                     'however we were unable to do so. Possible older API?')
 
 
+def service_done_event(node):
+    """Return the event that completes servicing of a node.
+
+    A node serviced from AVAILABLE goes back to AVAILABLE, otherwise to
+    ACTIVE.
+    """
+    if node.target_provision_state == states.AVAILABLE:
+        return 'done_available'
+    return 'done'
+
+
+def service_abort_event(node):
+    """Return the event that aborts servicing of a node in SERVICEFAIL.
+
+    A node serviced from AVAILABLE goes back to AVAILABLE, otherwise to
+    ACTIVE.
+    """
+    if node.target_provision_state == states.AVAILABLE:
+        return 'abort_available'
+    return 'abort'
+
+
 def servicing_error_handler(task, logmsg, errmsg=None, traceback=False,
                             tear_down_service=True, set_fail_state=True,
                             set_maintenance=None):

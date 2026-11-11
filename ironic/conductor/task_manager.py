@@ -167,6 +167,11 @@ def acquire(context, *args, **kwargs):
     return TaskManager(context, *args, **kwargs)
 
 
+# Events that move a node between servicing states without finishing them.
+_SERVICE_TARGET_PRESERVING_EVENTS = frozenset(
+    ('fail', 'wait', 'hold', 'unhold', 'resume', 'service', 'abort'))
+
+
 class TaskManager(object):
     """Context manager for tasks.
 
@@ -574,6 +579,15 @@ class TaskManager(object):
         self._prev_provision_state = self.node.provision_state
         self._prev_target_provision_state = self.node.target_provision_state
         self._event = event
+
+        # NOTE: Every service* state defaults to ACTIVE as its target, but a
+        # node serviced from AVAILABLE must keep AVAILABLE as its target
+        # while it moves between those states.
+        if (target_state is None
+                and event in _SERVICE_TARGET_PRESERVING_EVENTS
+                and self.node.provision_state in states.SERVICING_STATES
+                and self.node.target_provision_state == states.AVAILABLE):
+            target_state = states.AVAILABLE
 
         # Advance the state model for the given event. Note that this doesn't
         # alter the node in any way. This may raise InvalidState, if this event

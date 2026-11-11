@@ -766,6 +766,61 @@ class TaskManagerTestCase(db_base.DbTestCase):
             target_state=self.node.target_provision_state)
 
 
+class TaskManagerServiceTargetTestCase(db_base.DbTestCase):
+    def _process(self, provision_state, target, event, **kwargs):
+        node = obj_utils.create_test_node(
+            self.context, uuid=uuidutils.generate_uuid(),
+            driver='fake-hardware', provision_state=provision_state,
+            target_provision_state=target)
+        with task_manager.acquire(self.context, node.uuid) as task:
+            task.process_event(event, **kwargs)
+            return task.node.provision_state, task.node.target_provision_state
+
+    def test_service_events_keep_available_target(self):
+        for state, event, expected in (
+                (states.SERVICING, 'wait', states.SERVICEWAIT),
+                (states.SERVICING, 'hold', states.SERVICEHOLD),
+                (states.SERVICING, 'fail', states.SERVICEFAIL),
+                (states.SERVICEWAIT, 'resume', states.SERVICING),
+                (states.SERVICEWAIT, 'fail', states.SERVICEFAIL),
+                (states.SERVICEHOLD, 'unhold', states.SERVICEWAIT),
+                (states.SERVICEFAIL, 'service', states.SERVICING)):
+            with self.subTest(state=state, event=event):
+                self.assertEqual(
+                    (expected, states.AVAILABLE),
+                    self._process(state, states.AVAILABLE, event))
+
+    def test_service_events_default_to_active_target(self):
+        self.assertEqual(
+            (states.SERVICEWAIT, states.ACTIVE),
+            self._process(states.SERVICING, states.ACTIVE, 'wait'))
+
+    def test_service_explicit_target_wins(self):
+        self.assertEqual(
+            (states.SERVICEWAIT, states.ACTIVE),
+            self._process(states.SERVICING, states.AVAILABLE, 'wait',
+                          target_state=states.ACTIVE))
+
+    def test_service_done_available(self):
+        # Reaching the target clears it
+        self.assertEqual(
+            (states.AVAILABLE, states.NOSTATE),
+            self._process(states.SERVICING, states.AVAILABLE,
+                          'done_available'))
+
+    def test_service_abort_available(self):
+        self.assertEqual(
+            (states.AVAILABLE, states.NOSTATE),
+            self._process(states.SERVICEFAIL, states.AVAILABLE,
+                          'abort_available'))
+
+    def test_non_service_state_not_affected(self):
+        # Cleaning also targets AVAILABLE but must be left alone
+        self.assertEqual(
+            (states.CLEANFAIL, states.AVAILABLE),
+            self._process(states.CLEANING, states.AVAILABLE, 'fail'))
+
+
 class TaskManagerStateModelTestCases(tests_base.TestCase):
     def setUp(self):
         super(TaskManagerStateModelTestCases, self).setUp()

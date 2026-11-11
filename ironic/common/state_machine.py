@@ -320,6 +320,14 @@ machine.add_transition(st.SERVICING, st.ACTIVE, 'done')
 # A node in active can be serviced
 machine.add_transition(st.ACTIVE, st.SERVICING, 'service')
 
+# A node in available can be serviced, in which case it returns to
+# available once servicing completes. The distinct events (as opposed to
+# 'done' and 'abort') are needed because a transition has a single
+# destination, and the node's target provision state tells the conductor
+# which of them to use.
+machine.add_transition(st.AVAILABLE, st.SERVICING, 'service')
+machine.add_transition(st.SERVICING, st.AVAILABLE, 'done_available')
+
 # A node in servicing can be failed
 machine.add_transition(st.SERVICING, st.SERVICEFAIL, 'fail')
 
@@ -368,6 +376,10 @@ machine.add_transition(st.SERVICEFAIL, st.DELETING, 'delete')
 
 # A node in service fail may be aborted (returned to active)
 machine.add_transition(st.SERVICEFAIL, st.ACTIVE, 'abort')
+
+# A node in service fail that was serviced from available may be aborted
+# (returned to available)
+machine.add_transition(st.SERVICEFAIL, st.AVAILABLE, 'abort_available')
 
 # A node in service wait may be deleted.
 machine.add_transition(st.SERVICEWAIT, st.DELETING, 'delete')

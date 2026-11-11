@@ -1,0 +1,7 @@
+---
+features:
+  - |
+    Nodes in the ``available`` provision state can now be serviced using the
+    ``service`` provision state verb. Once servicing completes, or is aborted
+    from ``service failed``, the node returns to ``available`` rather than
+    ``active``.
