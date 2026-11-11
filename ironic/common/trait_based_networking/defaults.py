@@ -24,7 +24,10 @@ DEFAULT_TRAIT = base.NetworkTrait(
                       base.Actions.ATTACH_PORT,
                       base.FilterExpression.parse(
                           "port.is_port || port.is_portgroup"),
-                      max_count=1)]
+                      max_count=1,
+                      # Prefer ports with a physical_network set, then
+                      # ports with PXE enabled.
+                      sort=("port.physical_network", "port.pxe_enabled"))]
 )
 
 def default_network_trait():

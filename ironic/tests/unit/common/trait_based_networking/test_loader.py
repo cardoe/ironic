@@ -109,6 +109,8 @@ class TraitBasedNetworkingConfigLoaderTestCase(base.TestCase):
         self.assertEqual(tbn_base.Actions.ATTACH_PORT,
                          trait.actions[0].action)
         self.assertEqual(1, trait.actions[0].max_count)
+        self.assertEqual(("port.physical_network", "port.pxe_enabled"),
+                         trait.actions[0].sort)
 
     def test_config_loader_bundled_config_loaded_once(self):
         self.config(enable_trait_based_networking=True, group='conductor')

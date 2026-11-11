@@ -8,3 +8,8 @@ CUSTOM_DEFAULT_TBN_TRAIT:
     - action: attach_port
       filter: port.is_port
       max_count: 1
+      # Like the non-TBN port selection logic, prefer ports with a
+      # physical_network set, then ports with PXE enabled.
+      sort:
+        - port.physical_network
+        - port.pxe_enabled

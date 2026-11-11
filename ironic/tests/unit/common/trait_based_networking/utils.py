@@ -31,6 +31,8 @@ class FauxPortLikeObject(object):
     internal_info: dict = field(default_factory=default_internal_info)
     # NOTE(clif): Only relevant on ports, this defaults to True in ironic
     available_for_dynamic_portgroup: bool = True
+    # NOTE: Only relevant on ports, this defaults to True in ironic
+    pxe_enabled: bool = True
     # NOTE(clif): Only relevant on portgroups
     dynamic_portgroup: bool = False
 

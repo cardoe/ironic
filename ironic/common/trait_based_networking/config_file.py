@@ -17,6 +17,16 @@ import ironic.common.trait_based_networking.base as base
 import yaml
 
 
+def _parse_sort(trait_action):
+    """Return an action's sort keys as a tuple, or None if not set."""
+    sort = trait_action.get('sort', None)
+    if sort is None:
+        return None
+    if isinstance(sort, str):
+        return (sort,)
+    return tuple(sort)
+
+
 class ConfigFile(object):
     """Provides functionality to read TBN configuration files
 
@@ -129,12 +139,22 @@ class ConfigFile(object):
                     if max_count is not None:
                         max_count = int(max_count)
 
+                    sort = trait_action.get('sort', None)
+                    if sort is not None and not isinstance(sort,
+                                                           (str, list)):
+                        reasons.append(
+                            _(f"'{trait_name}' trait action 'sort' must be a "
+                              "list of sort keys"))
+                        valid = False
+                        continue
+
                     action_obj = base.TraitAction(
                         trait_name,
                         base.Actions(trait_action['action']),
                         base.FilterExpression.parse(trait_action['filter']),
                         min_count=min_count,
-                        max_count=max_count)
+                        max_count=max_count,
+                        sort=_parse_sort(trait_action))
 
                     validated, reason = action_obj.validate()
                     if not validated:
@@ -165,7 +185,8 @@ class ConfigFile(object):
                     base.Actions(action['action']),
                     base.FilterExpression.parse(action['filter']),
                     min_count=min_count,
-                    max_count=max_count))
+                    max_count=max_count,
+                    sort=_parse_sort(action)))
             order = trait_members.get('order', 1)
             self._traits.append(base.NetworkTrait(trait_name, parsed_actions,
                                                   order))

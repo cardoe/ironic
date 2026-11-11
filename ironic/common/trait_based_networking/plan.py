@@ -135,7 +135,8 @@ def _plan_attach_portlike(
         ) -> list[base.RenderedAction]:
     """Mainly called by plan_netwrok to determine which portlikes to attach"""
     actions = []
-    for (portlike, network) in itertools.product(node_portlikes,
+    sorted_portlikes = trait_action.sort_portlikes(node_portlikes)
+    for (portlike, network) in itertools.product(sorted_portlikes,
                                                  node_networks):
         if trait_action.matches(portlike, network, vif):
             actions.append(action_func((trait_action,
@@ -179,10 +180,10 @@ def _plan_group_and_attach_ports(
     # actions are enforced at configuration ingestion time.
 
     # NOTE(Clif): Only consider ports that allow dynamic_portgrouping.
-    available_ports: list[base.Port] = [
+    available_ports: list[base.Port] = trait_action.sort_portlikes(
         port for port in node_ports
         if port.available_for_dynamic_portgroup
-    ]
+    )
 
     for port in available_ports:
         # NOTE(clif): Network and vif are not considered when grouping ports

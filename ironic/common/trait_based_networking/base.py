@@ -353,6 +353,15 @@ class FilterExpression(object):
 
 DEFAULT_GROUP_AND_ATTACH_MIN_COUNT: int = 2
 
+# Port (and portgroup) attributes which may be used to sort candidate
+# portlikes before an action's filter expression is evaluated against them.
+SORT_KEYS: frozenset[str] = frozenset([
+    "port.category",
+    "port.physical_network",
+    "port.pxe_enabled",
+    "port.vendor",
+])
+
 
 @dataclass(frozen=True)
 class TraitAction:
@@ -369,13 +378,43 @@ class TraitAction:
     filter: 'FilterExpression'
     min_count: int | None = None
     max_count: int | None = None
+    sort: tuple[str, ...] | None = None
 
     def matches(self, portlike, network, vif):
         """Check if filter expression matches the port, network, vif."""
         return self.filter.eval(portlike, network, vif)
 
+    def sort_portlikes(self, portlikes):
+        """Order candidate portlikes according to this action's sort keys.
+
+        Each sort key names a port attribute (see SORT_KEYS). Portlikes for
+        which the attribute is set (truthy) are preferred and ordered first.
+        Keys are applied in priority order: the first key is the most
+        significant. The sort is stable, so the incoming ordering is kept
+        between portlikes that compare equal.
+
+        :param portlikes: An iterable of ports or portgroups.
+        :returns: A new, sorted list of portlikes.
+        """
+        if not self.sort:
+            return list(portlikes)
+
+        attrs = [key.split(".", 1)[1] for key in self.sort]
+
+        def sort_key(portlike):
+            return tuple(not getattr(portlike, attr, None) for attr in attrs)
+
+        return sorted(portlikes, key=sort_key)
+
     def validate(self):
         """Check that the action is valid."""
+        if self.sort is not None:
+            for key in self.sort:
+                if not isinstance(key, str) or key not in SORT_KEYS:
+                    return (False,
+                            _(f"'{key}' is not a valid sort key. Valid sort "
+                              f"keys are: {', '.join(sorted(SORT_KEYS))}."))
+
         match self.action:
             case Actions.GROUP_AND_ATTACH_PORTS:
                 if self.min_count is None \
@@ -462,6 +501,7 @@ class PrimordialPort:
 class Port(PrimordialPort):
     """A Port used internally to query and match to TraitActions"""
     available_for_dynamic_portgroup: bool
+    pxe_enabled: bool = True
 
     @classmethod
     def from_ironic_port(cls, ironic_port):
@@ -473,7 +513,8 @@ class Port(PrimordialPort):
             physical_network=ironic_port.physical_network,
             vendor=ironic_port.vendor,
             available_for_dynamic_portgroup=\
-            ironic_port.available_for_dynamic_portgroup
+            ironic_port.available_for_dynamic_portgroup,
+            pxe_enabled=ironic_port.pxe_enabled
         )
 
     @classmethod
@@ -512,6 +553,12 @@ class Portgroup(PrimordialPort):
             vendor=None,
             dynamic_portgroup=ironic_portgroup.dynamic_portgroup
         )
+
+    @property
+    def pxe_enabled(self):
+        # NOTE: Portgroups have no pxe_enabled field. Like the non-TBN port
+        # selection logic, treat them as PXE enabled.
+        return True
 
     def is_port(self):
         return False

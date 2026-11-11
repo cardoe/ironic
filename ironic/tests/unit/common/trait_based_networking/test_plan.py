@@ -264,6 +264,29 @@ class TraitBasedNetworkingPlanningTestCase(base.TestCase):
             action_funcs[type_name])
         self.assertEqual(expected_actions, result_actions)
 
+    def test_plan_attach_portlike_sorted(self):
+        trait_action = tbn_base.TraitAction(
+            "CUSTOM_TRAIT",
+            tbn_base.Actions.ATTACH_PORT,
+            tbn_base.FilterExpression.parse("port.vendor == 'fake_vendor'"),
+            max_count=1,
+            sort=("port.physical_network", "port.pxe_enabled"))
+        portlikes = [
+            utils.FauxPortLikeObject(uuid="no_physnet", physical_network=None,
+                                     pxe_enabled=True),
+            utils.FauxPortLikeObject(uuid="no_pxe", physical_network="a",
+                                     pxe_enabled=False),
+            utils.FauxPortLikeObject(uuid="best", physical_network="a",
+                                     pxe_enabled=True),
+        ]
+        result = tbn_plan._plan_attach_portlike(
+            trait_action, "fake_node_uuid", portlikes,
+            [tbn_base.Network("fake_net_id", "net", frozenset())],
+            utils.FauxVif(), 'port',
+            lambda args: tbn_base.AttachPort(*args))
+        self.assertEqual(1, len(result))
+        self.assertEqual("best", result[0].port_uuid)
+
     @data(
         annotate(
             "Attach one port",

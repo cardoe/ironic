@@ -1,0 +1,13 @@
+---
+features:
+  - |
+    Trait Based Networking (TBN) trait actions accept a new optional ``sort``
+    key: a list of port attributes used to order candidate ports and
+    portgroups before the action's filter is evaluated. Ports and portgroups
+    with the attribute set (or true) are preferred, with keys applied in
+    priority order. Valid sort keys are ``port.category``,
+    ``port.physical_network``, ``port.pxe_enabled`` and ``port.vendor``.
+
+    The default TBN trait, both bundled and built-in, now sorts by
+    ``port.physical_network`` and then ``port.pxe_enabled``, matching the
+    port preference of the non-TBN port selection logic.

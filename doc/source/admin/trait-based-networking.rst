@@ -104,6 +104,27 @@ and the following optional keys:
   There is no default maximum.
 * ``min_count`` - The minimum number of objects that *must* match before this
   action applies. The default minimum is effectively 1.
+* ``sort`` - A list of port attributes used to order candidate ports and
+  portgroups before the filter expression is evaluated against them. Ports
+  and portgroups for which an attribute is set (or true) are preferred. Keys
+  are applied in priority order, the first key being the most significant.
+  Without ``sort``, candidates are considered newest first. Valid sort keys
+  are ``port.category``, ``port.physical_network``, ``port.pxe_enabled`` and
+  ``port.vendor``. Portgroups are always treated as PXE enabled.
+
+  For example, to prefer ports with a physical network set, then ports with
+  PXE enabled:
+
+  .. code-block:: yaml
+
+      CUSTOM_TRAIT_NAME:
+        actions:
+          - action: attach_port
+            filter: port.is_port
+            max_count: 1
+            sort:
+              - port.physical_network
+              - port.pxe_enabled
 
 Available Actions
 ~~~~~~~~~~~~~~~~~

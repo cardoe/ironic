@@ -1151,6 +1151,32 @@ class TestNeutronVifPortIDMixin(db_base.DbTestCase):
     @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
                        autospec=True)
     @mock.patch.object(neutron_common, 'get_client', autospec=True)
+    def test_vif_attach_trait_based_networking_bundled_config_sort(
+            self, mock_client, mock_save):
+        # The bundled default trait prefers ports with a physical_network
+        # set, then ports with PXE enabled, over the newest port.
+        self.port.internal_info = {}
+        self.port.physical_network = 'physnet1'
+        self.port.pxe_enabled = True
+        self.port.save()
+        obj_utils.create_test_port(
+            self.context, node_id=self.node.id,
+            uuid=uuidutils.generate_uuid(),
+            address='52:54:00:cf:2d:33', physical_network=None,
+            pxe_enabled=False)
+        vif_info = {'id': 'fake_vif_id'}
+
+        self.config(enable_trait_based_networking=True, group='conductor')
+
+        with task_manager.acquire(self.context, self.node.id) as task:
+            self.interface.vif_attach(task, vif_info)
+
+        mock_save.assert_called_once_with(mock.ANY, vif_info['id'])
+        self.assertEqual(self.port.id, mock_save.call_args[0][0].id)
+
+    @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
+                       autospec=True)
+    @mock.patch.object(neutron_common, 'get_client', autospec=True)
     def test_vif_attach_trait_based_networking_vif_tags_filter(
             self, mock_client, mock_save):
         self.node.set_instance_info('traits', ['CUSTOM_TRAIT_NAME'])

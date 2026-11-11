@@ -160,6 +160,43 @@ class TraitBasedNetworkingConfigFileTestCase(base.TestCase):
                   f"{tbn_base.DEFAULT_GROUP_AND_ATTACH_MIN_COUNT} "
                   "or greater. Got '0'.")],
             ),
+            SubTestCase(
+                "Valid - sort keys",
+                ("CUSTOM_TRAIT_NAME:\n"
+                 "  actions:\n"
+                 "    - action: attach_port\n"
+                 "      filter: port.is_port\n"
+                 "      sort:\n"
+                 "        - port.physical_network\n"
+                 "        - port.pxe_enabled\n"),
+                True,
+                [],
+            ),
+            SubTestCase(
+                "Invalid - unknown sort key",
+                ("CUSTOM_TRAIT_NAME:\n"
+                 "  actions:\n"
+                 "    - action: attach_port\n"
+                 "      filter: port.is_port\n"
+                 "      sort:\n"
+                 "        - port.bogus\n"),
+                False,
+                [("'CUSTOM_TRAIT_NAME' has an invalid 'attach_port': "
+                  "'port.bogus' is not a valid sort key. Valid sort keys "
+                  f"are: {', '.join(sorted(tbn_base.SORT_KEYS))}.")],
+            ),
+            SubTestCase(
+                "Invalid - sort is not a list",
+                ("CUSTOM_TRAIT_NAME:\n"
+                 "  actions:\n"
+                 "    - action: attach_port\n"
+                 "      filter: port.is_port\n"
+                 "      sort:\n"
+                 "        port.pxe_enabled: true\n"),
+                False,
+                [("'CUSTOM_TRAIT_NAME' trait action 'sort' must be a list "
+                  "of sort keys")],
+            ),
         ]
 
         for subtest in subtests:
@@ -208,3 +245,26 @@ class TraitBasedNetworkingConfigFileTestCase(base.TestCase):
                         min_count=2)]
                 )
             ])
+
+    def test_parse_sort(self):
+        contents = (
+            "CUSTOM_TRAIT_NAME:\n"
+            "  actions:\n"
+            "    - action: attach_port\n"
+            "      filter: port.is_port\n"
+            "      sort:\n"
+            "        - port.physical_network\n"
+            "        - port.pxe_enabled\n")
+
+        with tempfile.NamedTemporaryFile(
+                mode='w',
+                dir=self.tmpdir.name,
+                delete=False) as tmpfile:
+            tmpfile.write(contents)
+            tmpfile.close()
+            config_file = cf.ConfigFile(tmpfile.name)
+            self.assertTrue(config_file.validate()[0])
+            config_file.parse()
+            action = config_file.traits()[0].actions[0]
+            self.assertEqual(("port.physical_network", "port.pxe_enabled"),
+                             action.sort)

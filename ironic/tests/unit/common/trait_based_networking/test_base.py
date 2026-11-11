@@ -627,3 +627,52 @@ class TraitBasedNetworkingBaseTestCase(base.TestCase):
         ]
         for action in actions:
             self.assertIsNotNone(str(action))
+
+    def _sort_action(self, sort):
+        return tbn.TraitAction(
+            "CUSTOM_TRAIT",
+            tbn.Actions.ATTACH_PORT,
+            tbn.FilterExpression.parse("port.is_port"),
+            sort=sort)
+
+    def test_sort_portlikes_no_sort(self):
+        ports = [tbn_test_utils.FauxPortLikeObject(uuid=str(i))
+                 for i in range(3)]
+        result = self._sort_action(None).sort_portlikes(ports)
+        self.assertEqual(ports, result)
+        self.assertIsNot(ports, result)
+
+    def test_sort_portlikes(self):
+        faux = tbn_test_utils.FauxPortLikeObject
+        ports = [
+            faux(uuid="none", physical_network=None, pxe_enabled=False),
+            faux(uuid="pxe", physical_network=None, pxe_enabled=True),
+            faux(uuid="physnet", physical_network="a", pxe_enabled=False),
+            faux(uuid="both", physical_network="b", pxe_enabled=True),
+            faux(uuid="both2", physical_network="c", pxe_enabled=True),
+        ]
+        action = self._sort_action(("port.physical_network",
+                                    "port.pxe_enabled"))
+        result = [p.uuid for p in action.sort_portlikes(ports)]
+        # Stable: "both" stays ahead of "both2".
+        self.assertEqual(["both", "both2", "physnet", "pxe", "none"], result)
+
+        action = self._sort_action(("port.pxe_enabled",
+                                    "port.physical_network"))
+        result = [p.uuid for p in action.sort_portlikes(ports)]
+        self.assertEqual(["both", "both2", "pxe", "physnet", "none"], result)
+
+    def test_portgroup_pxe_enabled(self):
+        pg = tbn.Portgroup(id=1, uuid="pg", address="addr", category=None,
+                           physical_network=None, vendor=None,
+                           dynamic_portgroup=False)
+        self.assertTrue(pg.pxe_enabled)
+
+    def test_validate_sort(self):
+        valid, reason = self._sort_action(
+            ("port.physical_network", "port.pxe_enabled")).validate()
+        self.assertTrue(valid)
+
+        valid, reason = self._sort_action(("port.bogus",)).validate()
+        self.assertFalse(valid)
+        self.assertIn("'port.bogus' is not a valid sort key", reason)
