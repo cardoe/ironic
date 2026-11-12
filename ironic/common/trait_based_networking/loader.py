@@ -11,6 +11,7 @@
 #    under the License.
 
 from ironic.common.i18n import _
+from ironic.common.trait_based_networking import base
 from ironic.common.trait_based_networking.config_file import ConfigFile
 from ironic.conf import CONF
 
@@ -64,6 +65,20 @@ def is_config_valid():
         if _CACHED_CONFIG_LOADER is None:
             return False
         return _CACHED_CONFIG_LOADER.valid
+
+
+def _warn_deprecated_sort_keys(traits, source):
+    """Log a warning for each trait action using a deprecated sort key."""
+    for trait in traits:
+        for action in trait.actions:
+            for key in action.sort or ():
+                if key in base.DEPRECATED_SORT_KEYS:
+                    LOG.warning('Trait Based Networking trait %(trait)s in '
+                                'configuration %(file)s uses the deprecated '
+                                'sort key %(key)s. It will be removed in a '
+                                'future release.',
+                                {'trait': trait.name, 'file': source,
+                                 'key': key})
 
 
 class ConfigLoader(object):
@@ -146,6 +161,7 @@ class ConfigLoader(object):
 
         # NOTE(clif) If we made it here the configuration should parse.
         self._config_file.parse()
+        _warn_deprecated_sort_keys(self._config_file.traits(), source)
 
         self._valid = True
         LOG.info(_('Successfully loaded and parsed configuration for '

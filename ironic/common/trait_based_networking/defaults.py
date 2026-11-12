@@ -21,7 +21,8 @@ DEFAULT_TRAIT = base.NetworkTrait(
     # Match a single available portgroup, or failing that a single available
     # port. Only the first matching action is applied, so portgroups are
     # preferred to ports. Prefer portlikes with a physical_network set, then
-    # ports with PXE enabled.
+    # ports with PXE enabled. port.pxe_enabled is deprecated and will be
+    # removed.
     [base.TraitAction(DEFAULT_TRAIT_NAME,
                       base.Actions.ATTACH_PORTGROUP,
                       base.FilterExpression.parse("port.is_portgroup"),

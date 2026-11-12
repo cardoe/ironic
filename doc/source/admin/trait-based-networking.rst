@@ -112,6 +112,11 @@ and the following optional keys:
   are ``port.category``, ``port.physical_network``, ``port.pxe_enabled`` and
   ``port.vendor``. Portgroups are always treated as PXE enabled.
 
+  .. warning::
+      The ``port.pxe_enabled`` sort key is deprecated and will be removed in
+      a future release. It exists only to mimic the non-TBN port selection
+      logic. A warning is logged when a configuration using it is loaded.
+
   For example, to prefer ports with a physical network set, then ports with
   PXE enabled:
 

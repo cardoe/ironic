@@ -362,6 +362,13 @@ SORT_KEYS: frozenset[str] = frozenset([
     "port.vendor",
 ])
 
+# Sort keys which are deprecated and will be removed in a future release.
+# NOTE: port.pxe_enabled only exists to mimic the non-TBN port selection
+# logic and should not be relied upon.
+DEPRECATED_SORT_KEYS: frozenset[str] = frozenset([
+    "port.pxe_enabled",
+])
+
 
 @dataclass(frozen=True)
 class TraitAction:

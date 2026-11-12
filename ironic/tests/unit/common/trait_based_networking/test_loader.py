@@ -142,3 +142,33 @@ class TraitBasedNetworkingConfigLoaderTestCase(base.TestCase):
 
         self.assertEqual(1, len(cl.traits))
         self.assertEqual("CUSTOM_TRAIT_NAME", cl.traits[0].name)
+
+    @mock.patch.object(loader, 'LOG', autospec=True)
+    def test_config_loader_warns_deprecated_sort_key_bundled(self, mock_log):
+        self.config(enable_trait_based_networking=True, group='conductor')
+        ConfigLoader()
+        mock_log.warning.assert_called_once_with(
+            mock.ANY, {'trait': defaults.DEFAULT_TRAIT_NAME,
+                       'file': loader.bundled_config(),
+                       'key': 'port.pxe_enabled'})
+
+    @mock.patch.object(loader, 'LOG', autospec=True)
+    def test_config_loader_no_deprecated_sort_key(self, mock_log):
+        contents = ("CUSTOM_TRAIT_NAME:\n"
+                    "  actions:\n"
+                    "    - action: attach_port\n"
+                    "      filter: port.is_port\n"
+                    "      sort:\n"
+                    "        - port.physical_network\n")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, 'tbn.yaml')
+            with open(path, 'w') as f:
+                f.write(contents)
+            self.config(trait_based_networking_config_file=path,
+                        group='conductor')
+            self.config(enable_trait_based_networking=True,
+                        group='conductor')
+            cl = ConfigLoader()
+
+        self.assertTrue(cl.valid)
+        mock_log.warning.assert_not_called()

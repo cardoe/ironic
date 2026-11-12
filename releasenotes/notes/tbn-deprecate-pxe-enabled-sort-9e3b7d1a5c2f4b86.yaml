@@ -1,0 +1,8 @@
+---
+deprecations:
+  - |
+    The ``port.pxe_enabled`` Trait Based Networking (TBN) sort key is
+    deprecated and will be removed in a future release. It exists only to
+    mimic the non-TBN port selection logic. A warning is logged whenever a
+    TBN configuration using it is loaded, including the default
+    configuration bundled with Ironic.

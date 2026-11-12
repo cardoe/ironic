@@ -17,6 +17,7 @@ CUSTOM_DEFAULT_TBN_TRAIT:
       max_count: 1
       # Like the non-TBN port selection logic, prefer ports with a
       # physical_network set, then ports with PXE enabled.
+      # NOTE: port.pxe_enabled is deprecated and will be removed.
       sort:
         - port.physical_network
         - port.pxe_enabled
