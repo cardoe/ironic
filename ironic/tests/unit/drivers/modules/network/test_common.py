@@ -1177,6 +1177,28 @@ class TestNeutronVifPortIDMixin(db_base.DbTestCase):
     @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
                        autospec=True)
     @mock.patch.object(neutron_common, 'get_client', autospec=True)
+    def test_vif_attach_trait_based_networking_bundled_config_portgroup(
+            self, mock_client, mock_save):
+        # The bundled default trait prefers portgroups to ports.
+        pg = obj_utils.create_test_portgroup(
+            self.context, node_id=self.node.id, address=None)
+        self.port.internal_info = {}
+        self.port.portgroup_id = pg.id
+        self.port.save()
+        vif_info = {'id': 'fake_vif_id'}
+
+        self.config(enable_trait_based_networking=True, group='conductor')
+
+        with task_manager.acquire(self.context, self.node.id) as task:
+            self.interface.vif_attach(task, vif_info)
+
+        mock_save.assert_called_once_with(mock.ANY, vif_info['id'])
+        self.assertIsInstance(mock_save.call_args[0][0], portgroup.Portgroup)
+        self.assertEqual(pg.id, mock_save.call_args[0][0].id)
+
+    @mock.patch.object(common.VIFPortIDMixin, '_save_vif_to_port_like_obj',
+                       autospec=True)
+    @mock.patch.object(neutron_common, 'get_client', autospec=True)
     def test_vif_attach_trait_based_networking_vif_tags_filter(
             self, mock_client, mock_save):
         self.node.set_instance_info('traits', ['CUSTOM_TRAIT_NAME'])

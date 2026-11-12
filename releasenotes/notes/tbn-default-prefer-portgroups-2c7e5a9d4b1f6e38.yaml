@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    The default Trait Based Networking (TBN) trait, both bundled and
+    built-in, now prefers portgroups to ports. It contains an
+    ``attach_portgroup`` action followed by an ``attach_port`` action; since
+    only the first matching action is applied, an available portgroup is
+    attached when present, otherwise an available port. This matches the
+    portgroup preference of the non-TBN port selection logic.

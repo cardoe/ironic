@@ -4,7 +4,14 @@
 # and [conductor]trait_based_networking_config_file is not set. Operators
 # wanting different behavior should supply their own configuration file.
 CUSTOM_DEFAULT_TBN_TRAIT:
+  # Only the first matching action is applied, so portgroups are preferred
+  # to ports like the non-TBN port selection logic.
   actions:
+    - action: attach_portgroup
+      filter: port.is_portgroup
+      max_count: 1
+      sort:
+        - port.physical_network
     - action: attach_port
       filter: port.is_port
       max_count: 1

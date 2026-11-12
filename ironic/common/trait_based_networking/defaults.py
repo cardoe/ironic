@@ -18,17 +18,22 @@ DEFAULT_TRAIT_NAME = "CUSTOM_DEFAULT_TBN_TRAIT"
 
 DEFAULT_TRAIT = base.NetworkTrait(
     DEFAULT_TRAIT_NAME,
-    # Define a single action which should match any available port or
-    # portgroup just once.
+    # Match a single available portgroup, or failing that a single available
+    # port. Only the first matching action is applied, so portgroups are
+    # preferred to ports. Prefer portlikes with a physical_network set, then
+    # ports with PXE enabled.
     [base.TraitAction(DEFAULT_TRAIT_NAME,
-                      base.Actions.ATTACH_PORT,
-                      base.FilterExpression.parse(
-                          "port.is_port || port.is_portgroup"),
+                      base.Actions.ATTACH_PORTGROUP,
+                      base.FilterExpression.parse("port.is_portgroup"),
                       max_count=1,
-                      # Prefer ports with a physical_network set, then
-                      # ports with PXE enabled.
+                      sort=("port.physical_network",)),
+     base.TraitAction(DEFAULT_TRAIT_NAME,
+                      base.Actions.ATTACH_PORT,
+                      base.FilterExpression.parse("port.is_port"),
+                      max_count=1,
                       sort=("port.physical_network", "port.pxe_enabled"))]
 )
+
 
 def default_network_trait():
     """Gets the default TBN trait
