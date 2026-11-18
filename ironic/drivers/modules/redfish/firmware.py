@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from oslo_log import log
 from oslo_utils import timeutils
 import sushy
+from sushy.oem.dell import firmware_inventory as dell_fw_inv
 
 from ironic.common import async_steps
 from ironic.common import exception
@@ -160,6 +161,11 @@ class RedfishFirmware(base.FirmwareInterface):
         elif nic_components:
             settings.extend(nic_components)
 
+        inventory_components = self.retrieve_inventory_components(
+            task, system)
+        if inventory_components:
+            settings.extend(inventory_components)
+
         if not settings:
             error_msg = (_('Cannot retrieve firmware for node %s: no '
                            'supported components') % task.node.uuid)
@@ -197,6 +203,66 @@ class RedfishFirmware(base.FirmwareInterface):
                 up_fw_cmp.model = up_fw.get('model')
                 up_fw_cmp.serial_number = up_fw.get('serial_number')
                 up_fw_cmp.save()
+
+
+    def retrieve_inventory_components(self, task, system):
+        """Retrieve read-only components from UpdateService FirmwareInventory.
+
+        The collection is requested with ``$expand`` so all members are
+        returned in a single request when the BMC supports it.
+
+        Components are named ``fw:<Name>``. On Dell systems only the
+        ``Installed-`` entries are used, see
+        :func:`sushy.oem.dell.firmware_inventory.get_installed_members`.
+        Members that report no version are skipped. Members sharing the
+        same Name are made unique by appending ``-<n>`` in the order the
+        BMC lists them.
+
+        :param task: a TaskManager instance.
+        :param system: a Redfish System object
+        :returns: a list of components, or None if the inventory could not
+            be read.
+        """
+        node = task.node
+        try:
+            update_service = redfish_utils.get_update_service(node)
+            members = update_service.firmware_inventory_expanded.get_members()
+        except (exception.RedfishError,
+                sushy.exceptions.SushyError) as e:
+            LOG.warning('Unable to access FirmwareInventory on node '
+                        '%(node_uuid)s, Error: %(error)s',
+                        {'node_uuid': node.uuid, 'error': e})
+            return None
+
+        manufacturer = system.manufacturer or ''
+        if 'Dell' in manufacturer.split():
+            members = dell_fw_inv.get_installed_members(members)
+
+        inv_list = []
+        name_counts = {}
+        for member in members:
+            if not member.version:
+                LOG.debug('Skipping FirmwareInventory member %(id)s on node '
+                          '%(node_uuid)s: no Version reported',
+                          {'id': member.identity, 'node_uuid': node.uuid})
+                continue
+
+            name = member.name or member.identity
+            count = name_counts.get(name, 0) + 1
+            name_counts[name] = count
+            if count > 1:
+                name = f'{name}-{count}'
+
+            inv_list.append({
+                'component': (redfish_utils.FW_INVENTORY_COMPONENT_PREFIX
+                              + name)[:255],
+                'current_version': member.version,
+                'vendor': member.manufacturer,
+                'model': member.software_id,
+                'serial_number': None,
+            })
+
+        return inv_list
 
     def retrieve_nic_components(self, task, system):
         """Helper function to retrieve all NICs components on a given node.

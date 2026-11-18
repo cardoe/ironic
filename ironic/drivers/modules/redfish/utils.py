@@ -109,6 +109,10 @@ NIC_COMPONENT_PREFIX = "nic:"
 NIC = "nic"
 "NIC Firmware Component type"
 
+FW_INVENTORY_COMPONENT_PREFIX = "fw:"
+"""Prefix for read-only components from UpdateService FirmwareInventory"""
+
+
 FIRMWARE_COMPONENTS = [BIOS, BMC]
 """Firmware Components available to update"""
 

@@ -1,0 +1,12 @@
+---
+features:
+  - |
+    The ``redfish`` firmware interface now records every entry of the BMC's
+    ``UpdateService/FirmwareInventory`` as a read-only firmware component
+    named ``fw:<Name>``, in addition to the existing ``bios``, ``bmc`` and
+    ``nic:`` components. This makes firmware for drives, storage
+    controllers, power supplies and other devices visible via
+    ``baremetal node firmware list``. The inventory is retrieved with a
+    single ``$expand`` request when the BMC supports it. On Dell iDRAC
+    only the ``Installed-`` entries are recorded. These components cannot
+    be updated through the ``update`` step.

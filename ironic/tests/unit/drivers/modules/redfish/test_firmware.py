@@ -56,6 +56,13 @@ class RedfishFirmwareTestCase(db_base.DbTestCase):
                                     return_value=None)
         observe.start()
         self.addCleanup(observe.stop)
+        # FirmwareInventory collection is covered by
+        # RedfishFirmwareInventoryTestCase.
+        inv_patcher = mock.patch.object(
+            redfish_fw.RedfishFirmware, 'retrieve_inventory_components',
+            autospec=True, return_value=None)
+        inv_patcher.start()
+        self.addCleanup(inv_patcher.stop)
 
     def _mock_exc_fwup_side_effect(self, firmware_interface, node,
                                    update_service, settings_list):
@@ -3756,3 +3763,159 @@ class RedfishFirmwareVerifyTestCase(db_base.DbTestCase):
                 task, [{'component': 'bios', 'url': 'http://bios/v2'}])
             info = task.node.driver_internal_info
             self.assertNotIn('firmware_reboot_requested', info)
+
+
+def _inv_member(identity, name, version, manufacturer='Dell',
+                software_id=None):
+    member = mock.Mock(spec=['identity', 'name', 'version',
+                             'manufacturer', 'software_id'])
+    member.identity = identity
+    member.name = name
+    member.version = version
+    member.manufacturer = manufacturer
+    member.software_id = software_id
+    return member
+
+
+class RedfishFirmwareInventoryTestCase(db_base.DbTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.config(enabled_hardware_types=['redfish'],
+                    enabled_power_interfaces=['redfish'],
+                    enabled_boot_interfaces=['redfish-virtual-media'],
+                    enabled_management_interfaces=['redfish'],
+                    enabled_firmware_interfaces=['redfish'])
+        self.node = obj_utils.create_test_node(
+            self.context, driver='redfish', driver_info=INFO_DICT)
+
+    def _system(self, manufacturer):
+        system = mock.Mock(spec=['manufacturer'])
+        system.manufacturer = manufacturer
+        return system
+
+    def _set_inventory(self, upd_svc_mock, members):
+        inv = upd_svc_mock.return_value.firmware_inventory_expanded
+        inv.get_members.return_value = members
+
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    def test_retrieve_inventory_components_dell(self, upd_svc_mock):
+        self._set_inventory(upd_svc_mock, [
+            _inv_member('Installed-25227-7.10.30.00',
+                        'Integrated Dell Remote Access Controller',
+                        '7.10.30.00', software_id='25227'),
+            _inv_member('Current-25227-7.10.30.00',
+                        'Integrated Dell Remote Access Controller',
+                        '7.10.30.00', software_id='25227'),
+            _inv_member('Previous-25227-7.00.00.00',
+                        'Integrated Dell Remote Access Controller',
+                        '7.00.00.00', software_id='25227'),
+            _inv_member('Available-159-2.20.0', 'BIOS', '2.20.0',
+                        software_id='159'),
+            _inv_member('Installed-159-2.19.1', 'BIOS', '2.19.1',
+                        software_id='159'),
+            _inv_member('Installed-0-PSU.Slot.1', 'Power Supply', '00.1D.7D',
+                        software_id='0'),
+            _inv_member('Installed-0-PSU.Slot.2', 'Power Supply', '00.1D.7D',
+                        software_id='0'),
+            _inv_member('Installed-999-', 'Nothing', None),
+        ])
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            result = task.driver.firmware.retrieve_inventory_components(
+                task, self._system('Dell Inc.'))
+
+        self.assertEqual([
+            {'component': 'fw:Integrated Dell Remote Access Controller',
+             'current_version': '7.10.30.00', 'vendor': 'Dell',
+             'model': '25227', 'serial_number': None},
+            {'component': 'fw:BIOS', 'current_version': '2.19.1',
+             'vendor': 'Dell', 'model': '159', 'serial_number': None},
+            {'component': 'fw:Power Supply', 'current_version': '00.1D.7D',
+             'vendor': 'Dell', 'model': '0', 'serial_number': None},
+            {'component': 'fw:Power Supply-2', 'current_version': '00.1D.7D',
+             'vendor': 'Dell', 'model': '0', 'serial_number': None},
+        ], result)
+
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    def test_retrieve_inventory_components_generic(self, upd_svc_mock):
+        # e.g. sushy-tools / other vendors with plain Ids; the Dell
+        # Id prefix filtering must not apply.
+        self._set_inventory(upd_svc_mock, [
+            _inv_member('BMC', 'Contoso BMC Firmware', '1.45',
+                        manufacturer='Contoso'),
+            _inv_member('Previous-BIOS', 'Contoso BIOS', '1.0',
+                        manufacturer='Contoso'),
+        ])
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            result = task.driver.firmware.retrieve_inventory_components(
+                task, self._system('Contoso'))
+        self.assertEqual(
+            [{'component': 'fw:Contoso BMC Firmware',
+              'current_version': '1.45', 'vendor': 'Contoso',
+              'model': None, 'serial_number': None},
+             {'component': 'fw:Contoso BIOS',
+              'current_version': '1.0', 'vendor': 'Contoso',
+              'model': None, 'serial_number': None}], result)
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    def test_retrieve_inventory_components_no_update_service(
+            self, upd_svc_mock, log_mock):
+        upd_svc_mock.side_effect = exception.RedfishError('no service')
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            self.assertIsNone(
+                task.driver.firmware.retrieve_inventory_components(
+                    task, self._system(None)))
+        self.assertTrue(log_mock.warning.called)
+
+    @mock.patch.object(redfish_fw, 'LOG', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_update_service', autospec=True)
+    def test_retrieve_inventory_components_not_found(
+            self, upd_svc_mock, log_mock):
+        inv = upd_svc_mock.return_value.firmware_inventory_expanded
+        inv.get_members.side_effect = sushy.exceptions.ResourceNotFoundError(
+            method='GET', url='/redfish/v1/UpdateService/FirmwareInventory',
+            response=mock.MagicMock(status_code=404))
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=True) as task:
+            self.assertIsNone(
+                task.driver.firmware.retrieve_inventory_components(
+                    task, self._system(None)))
+        self.assertTrue(log_mock.warning.called)
+
+    @mock.patch.object(redfish_fw.RedfishFirmware,
+                       'retrieve_inventory_components', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_chassis', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_manager', autospec=True)
+    @mock.patch.object(redfish_utils, 'get_system', autospec=True)
+    def test_cache_includes_inventory_components(
+            self, system_mock, manager_mock, chassis_mock, inv_mock):
+        system_mock.return_value.bios_version = '2.19.1'
+        manager_mock.return_value.firmware_version = '7.10.30.00'
+        manager_mock.return_value.model = 'iDRAC'
+        chassis_mock.side_effect = exception.RedfishError('no chassis')
+        inv_mock.return_value = [
+            {'component': 'fw:PERC H755 Front', 'current_version': '52.26',
+             'vendor': 'Dell', 'model': '104740', 'serial_number': None},
+        ]
+
+        with task_manager.acquire(self.context, self.node.uuid,
+                                  shared=False) as task:
+            task.driver.firmware.cache_firmware_components(task)
+            inv_mock.assert_called_once_with(
+                task.driver.firmware, task, system_mock.return_value)
+
+        components = {
+            c.component: c for c in
+            objects.FirmwareComponentList.get_by_node_id(
+                self.context, self.node.id)}
+        self.assertEqual(['bios', 'bmc', 'fw:PERC H755 Front'],
+                         sorted(components))
+        perc = components['fw:PERC H755 Front']
+        self.assertEqual('52.26', perc.current_version)
+        self.assertEqual('Dell', perc.vendor)
+        self.assertEqual('104740', perc.model)

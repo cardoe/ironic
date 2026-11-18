@@ -90,6 +90,18 @@ Each firmware image dictionary is of the form::
 The ``component`` and ``url`` arguments in the firmware image dictionary are
 mandatory, while the ``wait`` argument is optional.
 
+In addition to the components above, the ``redfish`` firmware interface
+records every entry of the BMC's ``UpdateService/FirmwareInventory`` as a
+read-only component named ``fw:<Name>`` (for example ``fw:BIOS`` or
+``fw:PERC H755 Front``), so firmware for drives, storage controllers, power
+supplies and other devices is visible with ``baremetal node firmware list``.
+These components cannot be used as the ``component`` of an ``update`` step.
+The inventory is requested with ``$expand`` so it is normally retrieved in a
+single request. On Dell iDRAC only the ``Installed-`` entries are used, so
+rollback (``Previous-``), staged (``Available-``) and duplicate
+(``Current-``) entries are ignored. Entries sharing the same name are
+suffixed with ``-2``, ``-3`` and so on.
+
 For ``url`` currently ``http``, ``https``, ``swift`` and ``file`` schemes are
 supported.
 
