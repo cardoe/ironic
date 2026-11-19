@@ -1,0 +1,34 @@
+---
+features:
+  - |
+    Nodes in the ``available`` provision state can now be serviced using the
+    ``service`` provision state verb, starting with API version 1.116. This
+    allows work such as firmware updates to be carried out on nodes which are
+    waiting to be deployed, without first moving them to ``manageable``.
+
+    Once servicing completes, the node returns directly to ``available``
+    rather than to ``active``. It is not cleaned on the way back, so
+    operators are responsible for the service steps they make available
+    leaving the node fit for the next deployment.
+
+    If servicing fails and the node is then aborted from ``service failed``,
+    it is moved to ``manageable`` rather than to ``available``, as the failed
+    servicing may have left it in any state. It has to be cleaned, using the
+    ``provide`` verb, before it can be deployed.
+
+    As such a node has no instance:
+
+    * It is powered off once servicing which used the ramdisk is finished.
+      Servicing with ``disable_ramdisk`` leaves the power state as the
+      service steps left it.
+    * It cannot be rescued from the ``service failed`` state. It can be
+      serviced again, aborted to ``manageable``, or deleted.
+    * A node which already has an instance associated with it, for example
+      one a deployment is about to start on, cannot be serviced from
+      ``available``.
+upgrade:
+  - |
+    Servicing of nodes in the ``available`` provision state is refused while
+    ``[DEFAULT]pin_release_version`` is set to an older release, since
+    conductors of an older release would move such a node to ``active``. It
+    can be used once the rolling upgrade is complete and the pin is removed.

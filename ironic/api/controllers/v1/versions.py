@@ -276,6 +276,8 @@ MINOR_114_FIRMWARE_IDENTITY = 114
 # v1.115: Add state, target_provision_state, and
 # duration_seconds to node history.
 MINOR_115_NODE_HISTORY_FIELDS = 115
+# v1.116: Allow the service verb for nodes in the available state.
+MINOR_116_SERVICE_AVAILABLE = 116
 
 # When adding another version, update:
 # - MINOR_MAX_VERSION
@@ -285,7 +287,7 @@ MINOR_115_NODE_HISTORY_FIELDS = 115
 # - Add a comment describing the change above the list of consts
 
 
-MINOR_MAX_VERSION = MINOR_115_NODE_HISTORY_FIELDS
+MINOR_MAX_VERSION = MINOR_116_SERVICE_AVAILABLE
 
 # String representations of the minor and maximum versions
 _MIN_VERSION_STRING = '{}.{}'.format(BASE_VERSION, MINOR_1_INITIAL_VERSION)

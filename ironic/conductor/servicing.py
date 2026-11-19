@@ -291,7 +291,12 @@ def _tear_down_node_service(task, disable_ramdisk):
     # Switch back to original interface, if necessary
     task.driver.deploy.restore_interface(task)
 
-    task.process_event('done')
+    # NOTE: Once servicing completes, a node is returned to the state it
+    # was serviced from.
+    if utils.serviced_from_available(task.node):
+        task.process_event('done_available')
+    else:
+        task.process_event('done')
 
 
 def execute_step_on_child_nodes(task, step):
@@ -369,19 +374,27 @@ def _was_agent_attempted(task):
 
 
 @task_manager.require_exclusive_lock
-def do_node_service_abort(task):
+def do_node_service_abort(task, move_to_manageable=False):
     """Internal method to abort an ongoing operation.
 
     :param task: a TaskManager instance with an exclusive lock
+    :param move_to_manageable: Whether to move a node in SERVICEFAIL, which
+        was serviced from AVAILABLE, to MANAGEABLE once servicing has been
+        torn down. The node stays in SERVICEFAIL until then, so that tearing
+        down knows it has no instance to restore, and so that the abort can
+        be retried if tearing down fails.
     """
     node = task.node
     try:
         # Use attempt-based logic instead of heartbeat-based
         agent_attempted = _was_agent_attempted(task)
+        # NOTE: A node serviced from AVAILABLE has no instance to restore.
+        restore_instance = (agent_attempted
+                            and not utils.serviced_from_available(node))
         if agent_attempted:
             task.driver.power.set_power_state(task, states.POWER_OFF)
         task.driver.deploy.tear_down_service(task)
-        if agent_attempted:
+        if restore_instance:
             task.driver.boot.prepare_instance(task)
             task.driver.power.set_power_state(task, states.POWER_ON)
     except Exception as e:
@@ -414,6 +427,9 @@ def do_node_service_abort(task):
     task.driver.deploy.restore_interface(task)
 
     LOG.info(info_message)
+
+    if move_to_manageable:
+        task.process_event('abort_manageable')
 
 
 @utils.fail_on_error(utils.servicing_error_handler,

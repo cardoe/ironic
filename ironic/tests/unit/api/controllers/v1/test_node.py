@@ -7059,6 +7059,40 @@ ORHMKeXMO8fcK0By7CiMKwHSXCoEQgfQhWwpMdSsO8LgHCjh87DQc= """
 
     @mock.patch.object(rpcapi.ConductorAPI, 'do_node_service',
                        autospec=True)
+    def test_service_available(self, mock_dns):
+        self.node.provision_state = states.AVAILABLE
+        self.node.save()
+
+        ret = self.put_json('/nodes/%s/states/provision' % self.node.uuid,
+                            {'target': states.VERBS['service'],
+                             'service_steps': [{
+                                 'interface': 'deploy',
+                                 'step': 'meow'}]},
+                            headers={api_base.Version.string: "1.116"})
+        self.assertEqual(http_client.ACCEPTED, ret.status_code)
+        mock_dns.assert_called_once_with(
+            mock.ANY, mock.ANY, self.node.uuid,
+            [{'interface': 'deploy', 'step': 'meow'}],
+            None, topic='test-topic')
+
+    @mock.patch.object(rpcapi.ConductorAPI, 'do_node_service',
+                       autospec=True)
+    def test_service_available_old_api(self, mock_dns):
+        self.node.provision_state = states.AVAILABLE
+        self.node.save()
+
+        ret = self.put_json('/nodes/%s/states/provision' % self.node.uuid,
+                            {'target': states.VERBS['service'],
+                             'service_steps': [{
+                                 'interface': 'deploy',
+                                 'step': 'meow'}]},
+                            headers={api_base.Version.string: "1.115"},
+                            expect_errors=True)
+        self.assertEqual(http_client.NOT_ACCEPTABLE, ret.status_code)
+        mock_dns.assert_not_called()
+
+    @mock.patch.object(rpcapi.ConductorAPI, 'do_node_service',
+                       autospec=True)
     def test_service_args_required(self, mock_dns):
         self.node.provision_state = states.SERVICEHOLD
         self.node.save()

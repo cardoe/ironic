@@ -2256,6 +2256,15 @@ def allow_service_verb():
     return api.request.version.minor >= versions.MINOR_87_SERVICE
 
 
+def allow_service_available():
+    """Check if the service verb may be used on nodes in available state.
+
+    Version 1.116 of the API allows servicing of available nodes.
+    """
+    return (api.request.version.minor
+            >= versions.MINOR_116_SERVICE_AVAILABLE)
+
+
 def check_allow_deploy_steps(target, deploy_steps):
     """Check if deploy steps are allowed"""
 

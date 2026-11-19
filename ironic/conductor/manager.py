@@ -99,7 +99,7 @@ class ConductorManager(base_manager.BaseConductorManager):
     # NOTE(rloo): This must be in sync with rpcapi.ConductorAPI's.
     # NOTE(pas-ha): This also must be in sync with
     #               ironic.common.release_mappings.RELEASE_MAPPING['master']
-    RPC_API_VERSION = '1.62'
+    RPC_API_VERSION = '1.63'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -701,6 +701,15 @@ class ConductorManager(base_manager.BaseConductorManager):
             if node.maintenance:
                 raise exception.NodeInMaintenance(op=_('rescuing'),
                                                   node=node.uuid)
+
+            if (node.provision_state == states.SERVICEFAIL
+                    and utils.serviced_from_available(node)):
+                # NOTE: The node has no instance to rescue, and unrescuing
+                # it would leave it in ACTIVE.
+                raise exception.InvalidStateRequested(
+                    _('Node %(node)s can not be rescued as it was serviced '
+                      'from the %(state)s state and has no instance.')
+                    % {'node': node.uuid, 'state': states.AVAILABLE})
 
             # Record of any pre-existing agent_url should be removed.
             utils.wipe_token_and_url(task)
@@ -1618,12 +1627,8 @@ class ConductorManager(base_manager.BaseConductorManager):
                        'step': node.service_step.get('step')})
             # First transition to SERVICEFAIL
             task.process_event('fail')
-            # Then abort from SERVICEFAIL to ACTIVE
-            task.process_event(
-                'abort',
-                callback=self._spawn_worker,
-                call_args=(servicing.do_node_service_abort, task),
-                err_handler=utils.provisioning_error_handler)
+            # Then abort from SERVICEFAIL to ACTIVE (or MANAGEABLE)
+            self._abort_service(task)
             return
 
         if node.provision_state == states.RESCUEWAIT:
@@ -1695,12 +1700,34 @@ class ConductorManager(base_manager.BaseConductorManager):
                        {'node': node.uuid})
                 raise exception.InvalidState(msg)
             # When someone is in service fail, its okay to abort.
-            task.process_event(
-                'abort',
-                callback=self._spawn_worker,
-                call_args=(servicing.do_node_service_abort,
-                           task),
-                err_handler=utils.provisioning_error_handler)
+            self._abort_service(task)
+
+    def _abort_service(self, task):
+        """Abort servicing of a node in SERVICEFAIL.
+
+        :param task: a TaskManager instance with an exclusive lock.
+        """
+        node = task.node
+        if utils.serviced_from_available(node):
+            # NOTE: The node was serviced from AVAILABLE and may have been
+            # left in any state by the failed servicing, so it is moved to
+            # MANAGEABLE, from where it must be cleaned before it can be
+            # deployed. It stays in SERVICEFAIL until servicing has been
+            # torn down, as tearing down relies on its target state to know
+            # that there is no instance to restore.
+            task.set_spawn_error_hook(utils.provisioning_error_handler,
+                                      node, node.provision_state,
+                                      node.target_provision_state)
+            task.spawn_after(self._spawn_worker,
+                             servicing.do_node_service_abort, task,
+                             move_to_manageable=True)
+            return
+
+        task.process_event(
+            'abort',
+            callback=self._spawn_worker,
+            call_args=(servicing.do_node_service_abort, task),
+            err_handler=utils.provisioning_error_handler)
 
     @METRICS.timer('ConductorManager._sync_power_states')
     @periodics.periodic(spacing=CONF.conductor.sync_power_state_interval,
@@ -4310,6 +4337,7 @@ class ConductorManager(base_manager.BaseConductorManager):
                                    exception.NodeLocked,
                                    exception.NoFreeConductorWorker,
                                    exception.ConcurrentActionLimit,
+                                   exception.NodeAssociated,
                                    exception.StepNotAllowed)
     def do_node_service(self, context, node_id, service_steps,
                         disable_ramdisk=False):
@@ -4335,7 +4363,8 @@ class ConductorManager(base_manager.BaseConductorManager):
                 'args': {'force': True} }
         :param disable_ramdisk: Optional. Whether to disable the ramdisk boot.
         :raises: InvalidParameterValue if power validation fails.
-        :raises: InvalidStateRequested if the node is not in manageable state.
+        :raises: InvalidStateRequested if the node is not in active or
+                 available state.
         :raises: NodeLocked if node is locked by another conductor.
         :raises: NoFreeConductorWorker when there is no free worker to start
                  async task.
@@ -4349,6 +4378,18 @@ class ConductorManager(base_manager.BaseConductorManager):
             if node.maintenance:
                 raise exception.NodeInMaintenance(op=_('service'),
                                                   node=node.uuid)
+            if node.provision_state == states.AVAILABLE:
+                if node.instance_uuid:
+                    # NOTE: The node is reserved for a deployment which is
+                    # about to start, do not take it away.
+                    raise exception.NodeAssociated(
+                        node=node.uuid, instance=node.instance_uuid)
+                if not self._can_service_available_nodes():
+                    raise exception.InvalidStateRequested(
+                        _('Node %(node)s can not be serviced from the '
+                          '%(state)s state until the upgrade is complete '
+                          'and the release version is no longer pinned.')
+                        % {'node': node.uuid, 'state': node.provision_state})
             # NOTE(TheJulia): service.do_node_service() will also make similar
             # calls to validate power & network, but we are doing it again
             # here so that the user gets immediate feedback of any issues.
@@ -4369,6 +4410,15 @@ class ConductorManager(base_manager.BaseConductorManager):
             conductor_steps.check_disallowed_steps(
                 service_steps, 'service', raise_on_disallowed=True)
 
+            # NOTE: Once servicing completes, a node is returned to the
+            # state it was serviced from. When it re-enters servicing after
+            # a failure or a hold, that state is its current target.
+            if (node.provision_state == states.AVAILABLE
+                    or utils.serviced_from_available(node)):
+                target_state = states.AVAILABLE
+            else:
+                target_state = states.ACTIVE
+
             try:
                 task.process_event(
                     'service',
@@ -4376,7 +4426,7 @@ class ConductorManager(base_manager.BaseConductorManager):
                     call_args=(servicing.do_node_service, task, service_steps,
                                disable_ramdisk),
                     err_handler=utils.provisioning_error_handler,
-                    target_state=states.ACTIVE)
+                    target_state=target_state)
             except exception.InvalidState:
                 raise exception.InvalidStateRequested(
                     action='service', node=node.uuid,

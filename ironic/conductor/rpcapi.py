@@ -161,12 +161,13 @@ class ConductorAPI(object):
     |    1.60 - Added continue_node_service
     |    1.61 - Added get virtual media support
     |    1.62 - Added update_portgroup_physical_network
+    |    1.63 - do_node_service accepts nodes in the AVAILABLE state
     """
 
     # NOTE(rloo): This must be in sync with manager.ConductorManager's.
     # NOTE(pas-ha): This also must be in sync with
     #               ironic.common.release_mappings.RELEASE_MAPPING['master']
-    RPC_API_VERSION = '1.62'
+    RPC_API_VERSION = '1.63'
 
     def __init__(self, topic=None):
         super(ConductorAPI, self).__init__()

@@ -575,10 +575,23 @@ class TaskManager(object):
         self._prev_target_provision_state = self.node.target_provision_state
         self._event = event
 
+        # NOTE: Every service* state defaults to ACTIVE as its target, but a
+        # node serviced from AVAILABLE must keep AVAILABLE as its target for
+        # as long as it stays within those states.
+        keep_available_target = (
+            target_state is None
+            and self.node.provision_state in states.SERVICING_STATES
+            and self.node.target_provision_state == states.AVAILABLE)
+
         # Advance the state model for the given event. Note that this doesn't
         # alter the node in any way. This may raise InvalidState, if this event
         # is not allowed in the current state.
         self.fsm.process_event(event, target_state=target_state)
+
+        if (keep_available_target
+                and self.fsm.current_state in states.SERVICING_STATES):
+            self.fsm.initialize(start_state=self.fsm.current_state,
+                                target_state=states.AVAILABLE)
 
         # stash current states in the error handler if callback is set,
         # in case we fail to get a worker from the pool

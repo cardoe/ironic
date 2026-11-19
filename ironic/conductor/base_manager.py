@@ -333,20 +333,30 @@ class BaseConductorManager(object):
                   "%(host)s. Moving to fail state.") %
                 {'state': state, 'host': self.host})
 
-    def _use_jsonrpc_port(self):
-        """Determines if the JSON-RPC port can be used."""
-        release_ver = versions.RELEASE_MAPPING.get(CONF.pin_release_version)
-        version_cap = (release_ver['rpc'] if release_ver
-                       else self.RPC_API_VERSION)
-        return versionutils.is_compatible('1.58', version_cap)
-
-    def _use_groups(self):
+    def _rpc_version_allowed(self, version):
+        """Whether the pinned release, if any, supports an RPC version."""
         release_ver = versions.RELEASE_MAPPING.get(CONF.pin_release_version)
         # NOTE(jroll) self.RPC_API_VERSION is actually defined in a subclass,
         # but we only use this class from there.
         version_cap = (release_ver['rpc'] if release_ver
                        else self.RPC_API_VERSION)
-        return versionutils.is_compatible('1.47', version_cap)
+        return versionutils.is_compatible(version, version_cap)
+
+    def _use_jsonrpc_port(self):
+        """Determines if the JSON-RPC port can be used."""
+        return self._rpc_version_allowed('1.58')
+
+    def _use_groups(self):
+        return self._rpc_version_allowed('1.47')
+
+    def _can_service_available_nodes(self):
+        """Whether every conductor knows how to service available nodes.
+
+        A conductor from an older release returns a node to ACTIVE once
+        servicing completes, which must not happen to a node without an
+        instance, so the feature is unavailable during a rolling upgrade.
+        """
+        return self._rpc_version_allowed('1.63')
 
     def _fail_transient_state(self, state, last_error):
         """Apply "fail" transition to nodes in a transient state.

@@ -132,6 +132,8 @@ available (stable state)
     using the ``active`` or ``deploy`` verbs.
   * ``manageable`` by setting the node's provision state using the ``manage``
     verb.
+  * ``available`` (through ``servicing``) by setting the node's provision
+    state using the ``service`` verb.
 
 deploying
   Nodes in ``deploying`` are being prepared to run a workload on them. This
@@ -268,7 +270,9 @@ Servicing
 servicing
   Nodes in the ``servicing`` state are nodes that are having service performed
   on them. This service is similar to cleaning, but is performed on nodes currently
-  in ``active`` state and returns them to ``active`` state when complete.
+  in ``active`` or ``available`` state and returns them to the state they were
+  in when complete. A node serviced from ``available`` whose servicing fails
+  and is aborted is moved to ``manageable`` instead.
 
   When a node is in the ``servicing`` state it means that the conductor is
   executing the service step or preparing the environment to execute the step.
@@ -290,11 +294,18 @@ service failed
   for example a timeout waiting for the ramdisk to PXE boot. From here the
   node can be transitioned to:
 
-  * ``active`` (through ``servicing``) by setting the node's provision state
-    using the ``service`` verb.
+  * ``active`` or ``available``, depending on which state the node was
+    serviced from (through ``servicing``), by setting the node's provision
+    state using the ``service`` verb.
   * ``rescue`` (through ``rescuing``) by setting the node's provision state
-    using the ``rescue`` verb.
-  * ``active`` by setting the node's provision state using the ``abort`` verb.
+    using the ``rescue`` verb. This is only possible for nodes serviced from
+    ``active``, as a node serviced from ``available`` has no instance.
+  * ``active`` by setting the node's provision state using the ``abort``
+    verb, if the node was serviced from ``active``.
+  * ``manageable`` by setting the node's provision state using the ``abort``
+    verb, if the node was serviced from ``available``. As the failed
+    servicing may have left the node in any state, it has to be cleaned
+    using the ``provide`` verb before it can be deployed again.
 
 .. note::
    Before attempting to abort a servicing operation on a node either in

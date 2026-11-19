@@ -2081,6 +2081,18 @@ def get_token_project_from_request(ctx):
                     'however we were unable to do so. Possible older API?')
 
 
+def serviced_from_available(node):
+    """Whether the node is being serviced from the AVAILABLE state.
+
+    Once servicing completes, a node is returned to the state it was
+    serviced from, which is recorded as its target provision state for as
+    long as it is in a service* state. A node serviced from AVAILABLE has no
+    instance.
+    """
+    return (node.provision_state in states.SERVICING_STATES
+            and node.target_provision_state == states.AVAILABLE)
+
+
 def servicing_error_handler(task, logmsg, errmsg=None, traceback=False,
                             tear_down_service=True, set_fail_state=True,
                             set_maintenance=None):

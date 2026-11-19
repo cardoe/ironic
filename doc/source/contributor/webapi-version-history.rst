@@ -2,6 +2,16 @@
 REST API Version History
 ========================
 
+1.116 (Indri)
+-------------
+
+The ``service`` provision state verb can be used on nodes in the
+``available`` state, in addition to ``active``. Such a node returns to
+``available`` once servicing completes, or moves to ``manageable`` if
+servicing fails and is aborted. With an older
+microversion, a request to service an ``available`` node is rejected with
+HTTP 406.
+
 1.115 (Hibiscus)
 ----------------
 

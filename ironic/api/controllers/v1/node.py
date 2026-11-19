@@ -1362,6 +1362,10 @@ class NodeStatesController(rest.RestController):
             if not api_utils.allow_service_verb():
                 raise exception.NotAcceptable()
 
+            if (rpc_node.provision_state == ir_states.AVAILABLE
+                    and not api_utils.allow_service_available()):
+                raise exception.NotAcceptable()
+
         self._do_provision_action(rpc_node, target, configdrive, clean_steps,
                                   deploy_steps, rescue_password,
                                   disable_ramdisk, service_steps)

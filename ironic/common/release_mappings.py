@@ -1098,8 +1098,8 @@ RELEASE_MAPPING = {
     # make it below. To release, we will preserve a version matching
     # the release as a separate block of text, like above.
     'master': {
-        'api': '1.115',
-        'rpc': '1.62',
+        'api': '1.116',
+        'rpc': '1.63',
         'networking_rpc': '1.1',
         'objects': {
             'Allocation': ['1.3', '1.2', '1.1'],

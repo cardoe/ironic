@@ -1312,6 +1312,51 @@ class AgentMethodsTestCase(db_base.DbTestCase):
             prepare_instance_mock.assert_called_once_with(task.driver.boot,
                                                           task)
 
+    @mock.patch.object(pxe.PXEBoot, 'prepare_instance', autospec=True)
+    @mock.patch.object(pxe.PXEBoot, 'clean_up_ramdisk', autospec=True)
+    @mock.patch('ironic.drivers.modules.network.flat.FlatNetwork.'
+                'configure_tenant_networks', autospec=True)
+    @mock.patch('ironic.drivers.modules.network.flat.FlatNetwork.'
+                'remove_servicing_network', autospec=True)
+    @mock.patch('ironic.conductor.utils.node_power_action', autospec=True)
+    def _test_tear_down_inband_service_from_available(
+            self, power_mock, remove_service_network_mock,
+            configure_tenant_mock, clean_up_ramdisk_mock,
+            prepare_instance_mock, provision_state=states.SERVICING,
+            target_provision_state=states.AVAILABLE,
+            disable_power_off=False):
+        # A node serviced from available has no instance: no tenant
+        # networks to restore, nothing to boot.
+        self.node.provision_state = provision_state
+        self.node.target_provision_state = target_provision_state
+        self.node.disable_power_off = disable_power_off
+        self.node.save()
+
+        with task_manager.acquire(
+                self.context, self.node.uuid, shared=False) as task:
+            utils.tear_down_inband_service(task)
+            expected_power = (states.REBOOT if disable_power_off
+                              else states.POWER_OFF)
+            power_mock.assert_called_once_with(task, expected_power)
+            remove_service_network_mock.assert_called_once_with(
+                task.driver.network, task)
+            clean_up_ramdisk_mock.assert_called_once_with(
+                task.driver.boot, task)
+            configure_tenant_mock.assert_not_called()
+            prepare_instance_mock.assert_not_called()
+
+    def test_tear_down_inband_service_from_available(self):
+        self._test_tear_down_inband_service_from_available()
+
+    def test_tear_down_inband_service_from_available_failed(self):
+        # Aborted: the node stays in SERVICEFAIL until torn down
+        self._test_tear_down_inband_service_from_available(
+            provision_state=states.SERVICEFAIL)
+
+    def test_tear_down_inband_service_from_available_disable_power_off(self):
+        self._test_tear_down_inband_service_from_available(
+            disable_power_off=True)
+
     def test_build_agent_options_conf(self):
         self.config(endpoint_override='https://api-url',
                     group='service_catalog')

@@ -463,6 +463,11 @@ detailed documentation of the Ironic State Machine is available
 .. versionadded:: 1.95
    Added the ability to set/unset ``disable_power_off`` on a node.
 
+.. versionadded:: 1.116
+   A node in the ``available`` state can be serviced, in addition to one in
+   the ``active`` state. It returns to ``available`` once servicing
+   completes, or moves to ``manageable`` if servicing is aborted.
+
 Normal response code: 202
 
 Error codes:

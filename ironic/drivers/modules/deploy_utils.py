@@ -882,8 +882,11 @@ def tear_down_inband_service(task):
     2. If 'manage_boot' parameter is set to true, it also calls
     the 'clean_up_ramdisk' method of boot interface to clean
     up the environment that was set for booting agent ramdisk.
-    3. Deletes the cleaning ports which were setup as part
-    of cleaning.
+    3. Deletes the servicing ports which were setup as part
+    of servicing.
+    4. Restores the tenant networks and boots the instance, unless
+    the node was serviced from the available state, in which case
+    there is no instance and the node is left powered off.
 
     :param task: a TaskManager object containing the node
     :raises: NetworkError, NodeServiceFailure if the cleaning ports cannot be
@@ -897,17 +900,29 @@ def tear_down_inband_service(task):
 
     task.driver.boot.clean_up_ramdisk(task)
 
-    if not service_failure:
-        with manager_utils.power_state_for_network_configuration(task):
-            task.driver.network.remove_servicing_network(task)
+    if service_failure:
+        return
+
+    # NOTE: A node serviced from AVAILABLE has no instance, so there are no
+    # tenant networks to restore and nothing to boot.
+    has_instance = not manager_utils.serviced_from_available(node)
+
+    with manager_utils.power_state_for_network_configuration(task):
+        task.driver.network.remove_servicing_network(task)
+        if has_instance:
             task.driver.network.configure_tenant_networks(task)
 
+    if has_instance:
         task.driver.boot.prepare_instance(task)
         # prepare_instance does not power on the node, the deploy interface is
         # normally responsible for that.
-        next_state = (states.REBOOT if task.node.disable_power_off
+        next_state = (states.REBOOT if node.disable_power_off
                       else states.POWER_ON)
         manager_utils.node_power_action(task, next_state)
+    elif node.disable_power_off:
+        # The node cannot be left powered off, so reboot it out of the
+        # servicing ramdisk the same way cleaning does.
+        manager_utils.node_power_action(task, states.REBOOT)
 
 
 def get_image_instance_info(node):
